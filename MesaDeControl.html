@@ -199,6 +199,7 @@ body{
 .panel + .panel{ margin-top:14px; }
 
 .grid-2{ display:grid; grid-template-columns: 1.3fr 1fr; gap:14px; }
+.grid-2-even{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
 .grid-3{ display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; }
 
 canvas{ max-width:100%; }
@@ -266,7 +267,8 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 /* ===== TOP PIE CHARTS ===== */
 .pie-card-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
 .pie-card-title{ font-family: var(--serif); font-size: 16px; font-weight:600; color: var(--paper); }
-.pie-canvas-wrap{ position:relative; min-height:220px; }
+.pie-canvas-wrap{ position:relative; height:260px; }
+.pie-canvas-wrap canvas{ cursor:pointer; }
 .pie-empty{ display:none; font-family:var(--sans); font-size:13px; color:var(--paper-faint); text-align:center; padding:60px 0; }
 
 /* ===== MOVEMENTS TABLE (pestaña Movimientos) ===== */
@@ -283,6 +285,18 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
   padding: 7px 12px; outline:none; cursor:pointer;
 }
 .movs-count{ font-family: var(--mono); font-size:11.5px; color: var(--paper-faint); margin-left:auto; white-space:nowrap; }
+.movs-active-filter{
+  display:flex; align-items:center; gap:10px; font-family: var(--sans); font-size:13px; color: var(--paper);
+  background: var(--panel-raised); border:1px solid var(--line-strong); border-radius:8px;
+  padding:9px 14px; margin-bottom:14px;
+}
+.movs-active-filter b{ font-weight:600; }
+.movs-active-filter button{
+  margin-left:auto; font-family: var(--mono); font-size:11px; color: var(--paper-faint);
+  background:none; border:1px solid var(--line-strong); border-radius:14px;
+  padding:4px 11px; cursor:pointer; transition: all .15s ease;
+}
+.movs-active-filter button:hover{ color: var(--rose); border-color: var(--rose); }
 .movs-table-wrap{ max-height:640px; overflow-y:auto; overflow-x:auto; }
 #movs-table{ min-width:880px; }
 #movs-table thead th{ position:sticky; top:0; background:var(--panel); cursor:pointer; user-select:none; }
@@ -382,7 +396,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 
     <!-- TOP PIE CHARTS -->
     <section class="section">
-      <div class="grid-2">
+      <div class="grid-2-even">
         <div class="panel">
           <div class="pie-card-head">
             <div class="pie-card-title">Composición de ingresos</div>
@@ -392,7 +406,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
             </div>
           </div>
           <div class="pie-canvas-wrap">
-            <canvas id="chart-pie-ingreso" height="220"></canvas>
+            <canvas id="chart-pie-ingreso"></canvas>
             <div class="pie-empty" id="pie-ingreso-empty">Sin ingresos para este filtro.</div>
           </div>
         </div>
@@ -405,7 +419,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
             </div>
           </div>
           <div class="pie-canvas-wrap">
-            <canvas id="chart-pie-egreso" height="220"></canvas>
+            <canvas id="chart-pie-egreso"></canvas>
             <div class="pie-empty" id="pie-egreso-empty">Sin egresos para este filtro.</div>
           </div>
         </div>
@@ -598,6 +612,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
           <input type="text" id="movs-search" class="movs-search" placeholder="Buscar por razón social, empresa, línea...">
           <select id="movs-filtro-empresa" class="movs-select"><option value="">Todas las empresas</option></select>
           <select id="movs-filtro-mes" class="movs-select"><option value="">Todos los meses</option></select>
+          <select id="movs-filtro-categoria" class="movs-select"><option value="">Todas las líneas</option></select>
           <select id="movs-filtro-tipomov" class="movs-select">
             <option value="">Ingreso y egreso</option>
             <option value="INGRESO">Solo ingresos</option>
@@ -605,6 +620,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
           </select>
           <span class="movs-count" id="movs-count"></span>
         </div>
+        <div id="movs-active-filter" class="movs-active-filter" style="display:none;"></div>
 
         <div class="movs-table-wrap">
           <table id="movs-table">
@@ -1312,10 +1328,22 @@ function renderMastheadMeta(){
   document.getElementById('meta-movs').textContent = all.length;
 }
 
-// ===================== MASTER RENDER (Flujos) =====================
 // ===================== TOP PIE CHARTS (Ingresos / Egresos) =====================
 const pieState = { ingresoModo: 'empresa', egresoModo: 'empresa' };
 let chartPieIngreso = null, chartPieEgreso = null;
+
+// Paleta amplia y sin repeticiones para subtipos (categorías de línea de negocio).
+const CATEGORIA_PALETTE = ['#0066ff','#00b368','#ff6a00','#8b2fd6','#e8112d','#00b8d9','#d4a300','#ff3d8a','#6b4cff','#2e8b57','#c2410c','#0891b2'];
+
+// Mapa global: una categoría (subtipo) siempre recibe el mismo color, sin importar si
+// aparece en el pie de ingresos o en el de egresos.
+function getCategoriaColorMap(){
+  const all = getAllData();
+  const categorias = [...new Set(all.map(r=>r.categoria))].sort();
+  const map = {};
+  categorias.forEach((c,i)=>{ map[c] = CATEGORIA_PALETTE[i % CATEGORIA_PALETTE.length]; });
+  return map;
+}
 
 function buildPieData(tipoMov, modo){
   const rows = getFiltered().filter(r => r.tipo_mov === tipoMov);
@@ -1329,7 +1357,7 @@ function buildPieData(tipoMov, modo){
     .sort((a,b)=>b[1]-a[1]);
 }
 
-function renderPieChart(canvasId, tipoMov, modo, existingChart, baseColor){
+function renderPieChart(canvasId, tipoMov, modo, existingChart){
   const ctx = document.getElementById(canvasId);
   if(!ctx) return existingChart;
   const entries = buildPieData(tipoMov, modo);
@@ -1338,8 +1366,9 @@ function renderPieChart(canvasId, tipoMov, modo, existingChart, baseColor){
   if(existingChart) existingChart.destroy();
   if(entries.length === 0) return null;
 
-  const palette = ['#0066ff','#00b368','#ff6a00','#8b2fd6','#e8112d','#00b8d9','#d4a300','#ff3d8a'];
-  const colors = entries.map(([k], i) => modo === 'empresa' ? colorFor(k, i) : palette[i % palette.length]);
+  const catColorMap = getCategoriaColorMap();
+  const colors = entries.map(([k], i) => modo === 'empresa' ? colorFor(k, i) : (catColorMap[k] || CATEGORIA_PALETTE[i % CATEGORIA_PALETTE.length]));
+
   const chart = new Chart(ctx, {
     type:'pie',
     data:{
@@ -1352,6 +1381,7 @@ function renderPieChart(canvasId, tipoMov, modo, existingChart, baseColor){
     },
     options:{
       responsive:true,
+      maintainAspectRatio: false,
       plugins:{
         legend:{ position:'right', labels:{ color:'#15151a', font:{family:'Inter', size:11.5}, boxWidth:11, padding:9 } },
         tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:10,
@@ -1360,6 +1390,19 @@ function renderPieChart(canvasId, tipoMov, modo, existingChart, baseColor){
             const pct = total > 0 ? (v/total*100).toFixed(1) : '0.0';
             return `${ctx.label}: ${fmtMoney(v)} (${pct}%)`;
           } } }
+      },
+      onClick: (evt, elements) => {
+        if(!elements.length) return;
+        const idx = elements[0].index;
+        const label = entries[idx][0];
+        goToMovimientosFiltrado({
+          empresa: modo === 'empresa' ? label : (state.empresa || ''),
+          categoria: modo === 'categoria' ? label : '',
+          tipoMov,
+        });
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
       }
     }
   });
@@ -1671,6 +1714,7 @@ const movsState = {
   empresa: '',
   mes: '',
   tipoMov: '',
+  categoria: '',
   sortKey: 'mes',
   sortDir: 1, // 1 asc, -1 desc
   page: 1,
@@ -1684,6 +1728,7 @@ function movsFilteredRows(){
     if(movsState.empresa && r.empresa !== movsState.empresa) return false;
     if(movsState.mes && r.mes !== movsState.mes) return false;
     if(movsState.tipoMov && r.tipo_mov !== movsState.tipoMov) return false;
+    if(movsState.categoria && r.categoria !== movsState.categoria) return false;
     if(q){
       const hay = `${r.empresa} ${r.categoria} ${r.razon_social} ${r.mes}`.toLowerCase();
       if(!hay.includes(q)) return false;
@@ -1725,6 +1770,39 @@ function populateMovsFilters(){
   const currentMes = movsState.mes;
   selMes.innerHTML = '<option value="">Todos los meses</option>' +
     mesesConDatos.map(m=>`<option value="${m}" ${m===currentMes?'selected':''}>${m}</option>`).join('');
+
+  const selCategoria = document.getElementById('movs-filtro-categoria');
+  if(selCategoria){
+    const categorias = [...new Set(all.map(r=>r.categoria))].sort();
+    const currentCategoria = movsState.categoria;
+    selCategoria.innerHTML = '<option value="">Todas las líneas</option>' +
+      categorias.map(c=>`<option value="${c}" ${c===currentCategoria?'selected':''}>${c}</option>`).join('');
+  }
+}
+
+function renderMovsActiveFilterBanner(){
+  const box = document.getElementById('movs-active-filter');
+  if(!box) return;
+  const parts = [];
+  if(movsState.empresa) parts.push(`empresa <b>${movsState.empresa}</b>`);
+  if(movsState.categoria) parts.push(`línea <b>${movsState.categoria}</b>`);
+  if(movsState.tipoMov) parts.push(`solo <b>${movsState.tipoMov === 'INGRESO' ? 'ingresos' : 'egresos'}</b>`);
+
+  if(parts.length === 0){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  box.style.display = 'flex';
+  box.innerHTML = `Viendo movimientos filtrados por ${parts.join(', ')}. <button id="movs-clear-active">✕ Quitar filtro</button>`;
+  document.getElementById('movs-clear-active').addEventListener('click', ()=>{
+    movsState.empresa = ''; movsState.categoria = ''; movsState.tipoMov = ''; movsState.search = '';
+    movsState.page = 1;
+    populateMovsFilters();
+    document.getElementById('movs-search').value = '';
+    renderMovsTable();
+    renderMovsActiveFilterBanner();
+  });
 }
 
 function renderMovsTable(){
@@ -1769,13 +1847,19 @@ function renderMovsTable(){
 
 function renderMovimientos(){
   populateMovsFilters();
+  const selTipo = document.getElementById('movs-filtro-tipomov');
+  if(selTipo) selTipo.value = movsState.tipoMov;
+  const search = document.getElementById('movs-search');
+  if(search) search.value = movsState.search;
   renderMovsTable();
+  renderMovsActiveFilterBanner();
 }
 
 function initMovimientosTab(){
   const search = document.getElementById('movs-search');
   const selEmpresa = document.getElementById('movs-filtro-empresa');
   const selMes = document.getElementById('movs-filtro-mes');
+  const selCategoria = document.getElementById('movs-filtro-categoria');
   const selTipo = document.getElementById('movs-filtro-tipomov');
   const prevBtn = document.getElementById('movs-prev');
   const nextBtn = document.getElementById('movs-next');
@@ -1791,16 +1875,24 @@ function initMovimientosTab(){
     movsState.empresa = selEmpresa.value;
     movsState.page = 1;
     renderMovsTable();
+    renderMovsActiveFilterBanner();
   });
   selMes.addEventListener('change', ()=>{
     movsState.mes = selMes.value;
     movsState.page = 1;
     renderMovsTable();
   });
+  selCategoria.addEventListener('change', ()=>{
+    movsState.categoria = selCategoria.value;
+    movsState.page = 1;
+    renderMovsTable();
+    renderMovsActiveFilterBanner();
+  });
   selTipo.addEventListener('change', ()=>{
     movsState.tipoMov = selTipo.value;
     movsState.page = 1;
     renderMovsTable();
+    renderMovsActiveFilterBanner();
   });
   prevBtn.addEventListener('click', ()=>{
     movsState.page -= 1;
@@ -1865,17 +1957,29 @@ function renderCurrentTab(){
   else if(currentTab === 'movimientos') renderMovimientos();
 }
 
+function switchToTab(tabName){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab === tabName));
+  currentTab = tabName;
+  document.querySelectorAll('.tab-panel').forEach(p=>p.style.display = 'none');
+  document.getElementById('tab-' + currentTab).style.display = '';
+  renderCurrentTab();
+}
+
 function initTabs(){
   document.querySelectorAll('.tab-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      currentTab = btn.dataset.tab;
-      document.querySelectorAll('.tab-panel').forEach(p=>p.style.display = 'none');
-      document.getElementById('tab-' + currentTab).style.display = '';
-      renderCurrentTab();
-    });
+    btn.addEventListener('click', ()=> switchToTab(btn.dataset.tab));
   });
+}
+
+// Llamado desde los pie charts de Flujos: lleva a la pestaña Movimientos ya
+// filtrada por la empresa/categoría/tipo de movimiento en la que se hizo clic.
+function goToMovimientosFiltrado({ empresa, categoria, tipoMov }){
+  movsState.search = '';
+  movsState.empresa = empresa || '';
+  movsState.categoria = categoria || '';
+  movsState.tipoMov = tipoMov || '';
+  movsState.page = 1;
+  switchToTab('movimientos');
 }
 
 function initConfigForm(){
