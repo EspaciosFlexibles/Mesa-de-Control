@@ -999,6 +999,29 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       </div>
     </section>
 
+    <!-- COBERTURA DE PAGOS DE ACTIVOS -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Mes por mes, todo el historial</div>
+          <div class="section-title">¿Alcanzó a pagar cada activo cuando le tocaba?</div>
+        </div>
+        <div class="view-toggle" id="cobertura-toggle">
+          <button class="active" data-modo="empresa">Detalle de cobertura</button>
+          <button data-modo="activo">% cubierto por activo</button>
+        </div>
+      </div>
+      <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;">
+        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí.
+      </div>
+      <div class="panel">
+        <canvas id="chart-cobertura" height="110"></canvas>
+      </div>
+      <div class="panel pivot-wrap">
+        <table class="pivot" id="cobertura-table"></table>
+      </div>
+    </section>
+
   </div>
 
   <!-- ===================== TAB: MOVIMIENTOS ===================== -->
@@ -1319,6 +1342,8 @@ function rowsToActivosData(rows){
   const iMotivo = col('motivo');
   const iIngEgr = col('ingreso/egreso', 'ingreso egreso', 'ingreso / egreso');
   const iRentada = col('rentada', 'estatus', 'estado');
+  const iPeriodicidad = col('periodicidad');
+  const iMesPago = col('mes de pago', 'mes pago', 'meses de pago');
 
   const out = [];
   for(let i = headerIdx+1; i < rows.length; i++){
@@ -1337,6 +1362,8 @@ function rowsToActivosData(rows){
       motivo: iMotivo !== -1 ? (r[iMotivo]||'').trim() : '',
       ingreso_egreso: iIngEgr !== -1 ? (r[iIngEgr]||'').trim().toUpperCase() : '',
       rentada: iRentada !== -1 ? /^(s|si|sí|x|true|1)/i.test((r[iRentada]||'').trim()) : false,
+      periodicidad: iPeriodicidad !== -1 ? (r[iPeriodicidad]||'').trim() : '',
+      mesPago: iMesPago !== -1 ? (r[iMesPago]||'').trim() : '',
     });
   }
   return out;
@@ -3657,6 +3684,208 @@ function renderFinanciamiento(){
   }
 }
 
+// ===================== COBERTURA DE PAGOS DE ACTIVOS (histórico, mes a mes) =====================
+// Para cada mes en que a una empresa le toca pagar algo (según la Periodicidad de cada
+// activo: Mensual siempre aplica; Trimestral/Semestral/Anual solo en los meses que digas en
+// la columna "Mes de pago"; Contra hito nunca entra aquí, no tiene fecha fija), se revisa:
+// 1) ¿La Utilidad Operativa de ESE mes específico alcanza? (se cubre primero el pago más caro)
+// 2) Si no alcanza, ¿el flujo de caja acumulado hasta ese punto cubre lo que falta? (mismo
+//    acumulado y mismo punto de referencia de la sección "Flujo de caja acumulado" de Flujos)
+// Si ninguno de los dos alcanza, ese pago queda marcado como insuficiente.
+const coberturaState = { modo: 'empresa' };
+let chartCobertura = null;
+
+function normalizarPeriodicidad(p){
+  const n = normHeader(p);
+  if(n.includes('hito')) return 'HITO';
+  if(n.includes('trimestral')) return 'TRIMESTRAL';
+  if(n.includes('semestral')) return 'SEMESTRAL';
+  if(n.includes('anual')) return 'ANUAL';
+  return 'MENSUAL';
+}
+
+// Para Trimestral/Semestral/Anual, en qué meses (nombres en español) le toca pagar — viene de
+// la columna "Mes de pago" (separados por coma). Mensual no necesita esta columna (aplica
+// siempre); Contra hito no aplica a esta revisión calendarizada.
+function mesesDePago(activo){
+  return (activo.mesPago || '').split(',').map(s=>s.trim()).filter(Boolean);
+}
+
+function activoAplicaEnMes(activo, nombreMes){
+  const per = normalizarPeriodicidad(activo.periodicidad);
+  if(per === 'HITO') return false;
+  if(per === 'MENSUAL') return true;
+  return mesesDePago(activo).includes(nombreMes);
+}
+
+// Recorre TODO el historial disponible de una empresa y regresa una fila por cada
+// (mes, activo) en que le tocaba pagar algo — con el desglose de cómo se cubrió.
+function calcularCoberturaHistorica(empresa){
+  const rowsEmp = getAllData().filter(r => r.empresa === empresa);
+  const periodos = getPeriodosOrdenados(rowsEmp);
+  if(periodos.length === 0) return [];
+
+  const utilidadPorPeriodo = periodos.map(p => {
+    const rowsP = rowsEmp.filter(r => r.mes === p.mes && getAnioDeFila(r) === p.anio);
+    return calcularLineasER(rowsP).utilidadOperativa;
+  });
+
+  // Mismo acumulado y mismo punto de referencia que ya configuraste en "Flujo de caja
+  // acumulado" (pestaña Flujos) — si no has puesto ninguno, arranca desde $0.
+  const ancla = getAncla(empresa);
+  const flujoAcumuladoPorPeriodo = calcularAcumulado(periodos, rowsEmp, ancla);
+
+  const activosEmp = liveActivosData.filter(a => a.empresa === empresa && a.pago_recurrente > 0);
+  const filas = [];
+
+  periodos.forEach((p, idx) => {
+    const activosDelMes = activosEmp
+      .filter(a => activoAplicaEnMes(a, p.mes))
+      .sort((a,b) => b.pago_recurrente - a.pago_recurrente);
+    if(activosDelMes.length === 0) return;
+
+    let disponibleUtilidad = utilidadPorPeriodo[idx];
+    let disponibleFlujo = flujoAcumuladoPorPeriodo[idx];
+
+    activosDelMes.forEach(a => {
+      const pago = a.pago_recurrente;
+      const deUtilidad = Math.max(0, Math.min(disponibleUtilidad, pago));
+      disponibleUtilidad -= deUtilidad;
+      const restante = pago - deUtilidad;
+      const deFlujo = restante > 0 ? Math.max(0, Math.min(disponibleFlujo, restante)) : 0;
+      disponibleFlujo -= deFlujo;
+      const cubierto = deUtilidad + deFlujo;
+      const faltante = pago - cubierto;
+
+      let fuente;
+      if(faltante > 0.01) fuente = 'INSUFICIENTE';
+      else if(deFlujo > 0.01) fuente = 'FLUJO ACUMULADO';
+      else fuente = 'UTILIDAD DEL MES';
+
+      filas.push({
+        empresa, periodoLabel: labelPeriodo(p), anio: p.anio, mes: p.mes, idxPeriodo: idx,
+        activo: a.activo, tipo: a.tipo, periodicidad: normalizarPeriodicidad(a.periodicidad),
+        pago, utilidadMes: utilidadPorPeriodo[idx], flujoAcumulado: flujoAcumuladoPorPeriodo[idx],
+        deUtilidad, deFlujo, cubierto, faltante, fuente,
+        pct: pago > 0 ? (cubierto/pago*100) : 100,
+      });
+    });
+  });
+
+  return filas;
+}
+
+function renderCoberturaActivos(){
+  const EMPRESAS = getEmpresas();
+  const empresas = activosState.empresa ? [activosState.empresa] : EMPRESAS;
+  let filas = [];
+  empresas.forEach(emp => { filas = filas.concat(calcularCoberturaHistorica(emp)); });
+  // Más reciente primero dentro de cada empresa.
+  filas.sort((a,b) => (a.empresa < b.empresa ? -1 : a.empresa > b.empresa ? 1 : (b.anio - a.anio) || (b.idxPeriodo - a.idxPeriodo)));
+
+  renderCoberturaTabla(filas);
+  renderCoberturaChart(filas);
+}
+
+function renderCoberturaTabla(filas){
+  const table = document.getElementById('cobertura-table');
+  if(!table) return;
+  if(filas.length === 0){
+    table.innerHTML = '<tr><td class="capture-log-empty">No hay activos con pago programado que caiga en algún mes de tu historial (revisa Periodicidad / Mes de pago en la hoja Activos).</td></tr>';
+    return;
+  }
+
+  let html;
+  if(coberturaState.modo === 'empresa'){
+    html = '<tr><th>Mes</th><th>Empresa</th><th>Activo</th><th>Pago</th><th>Utilidad del mes</th><th>De flujo acumulado</th><th>Resultado</th></tr>';
+    filas.forEach(f => {
+      const ok = f.fuente !== 'INSUFICIENTE';
+      const cls = ok ? '' : 'neg';
+      const icono = f.fuente === 'INSUFICIENTE' ? '❌' : (f.fuente === 'FLUJO ACUMULADO' ? '🟡' : '✅');
+      html += `<tr class="subtotal">
+        <td>${f.periodoLabel}</td>
+        <td>${f.empresa}</td>
+        <td>${f.activo}</td>
+        <td>${fmtMoney(f.pago)}</td>
+        <td>${fmtMoney(f.utilidadMes)}</td>
+        <td>${f.deFlujo > 0.01 ? fmtMoney(f.deFlujo) : '—'}</td>
+        <td class="${cls}">${icono} ${f.fuente}${f.faltante>0.01 ? ' ('+fmtMoney(f.faltante)+' faltante)' : ''}</td>
+      </tr>`;
+    });
+  } else {
+    html = '<tr><th>Mes</th><th>Empresa</th><th>Activo</th><th>Tipo</th><th>Periodicidad</th><th>Pago</th><th>% cubierto</th></tr>';
+    filas.forEach(f => {
+      const cls = f.pct >= 100 ? '' : 'neg';
+      html += `<tr>
+        <td>${f.periodoLabel}</td>
+        <td>${f.empresa}</td>
+        <td>${f.activo}</td>
+        <td>${displayCategoria(f.tipo)}</td>
+        <td style="font-size:11px; color:var(--paper-faint);">${f.periodicidad}</td>
+        <td>${fmtMoney(f.pago)}</td>
+        <td class="${cls}">${f.pct.toFixed(0)}%</td>
+      </tr>`;
+    });
+  }
+  table.innerHTML = html;
+}
+
+function renderCoberturaChart(filas){
+  const ctx = document.getElementById('chart-cobertura');
+  if(!ctx) return;
+  if(chartCobertura){ chartCobertura.destroy(); chartCobertura = null; }
+  if(filas.length === 0) return;
+
+  // La gráfica resume por mes+empresa: cuánto se cubrió en total vs. cuánto faltó, de los
+  // últimos periodos (para que no se sature con años de historial).
+  const recientes = filas.slice(0, 30).slice().reverse();
+  const VERDE = '#00875f', AMARILLO = '#c99a00', ROJO = '#e0203c';
+  const VERDE_CLARO = 'rgba(0,135,95,0.25)', ROJO_CLARO = 'rgba(224,32,60,0.22)';
+
+  const labels = recientes.map(f => f.periodoLabel + ' · ' + f.activo);
+  const base = recientes.map(f => f.cubierto);
+  const baseColor = recientes.map(f => f.fuente === 'INSUFICIENTE' ? ROJO : (f.fuente === 'FLUJO ACUMULADO' ? AMARILLO : VERDE));
+  const sombraValor = recientes.map(f => f.faltante > 0.01 ? f.faltante : 0);
+  const sombraColor = recientes.map(() => ROJO_CLARO);
+
+  chartCobertura = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Cubierto', data: base, backgroundColor: baseColor, borderWidth:0, stack:'s' },
+        { label:'Faltante', data: sombraValor, backgroundColor: sombraColor, borderWidth:0, stack:'s' },
+      ]
+    },
+    options:{
+      responsive:true,
+      interaction:{ mode:'nearest', axis:'xy', intersect:true },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:8,
+          callbacks:{ label:(ctx)=> `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` } }
+      },
+      scales:{
+        x:{ stacked:true, grid:{ display:false }, ticks:{ color:'#5a5a66', font:{family:'IBM Plex Mono', size:9}, maxRotation:60, minRotation:60 } },
+        y:{ stacked:true, grid:{ color:'rgba(30,26,20,0.07)' }, ticks:{ color:'#5a5a66', font:{family:'IBM Plex Mono', size:10}, callback:(v)=> '$'+(v/1000).toLocaleString('es-MX')+'k' } }
+      }
+    }
+  });
+}
+
+function initCoberturaToggle(){
+  document.querySelectorAll('#cobertura-toggle button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#cobertura-toggle button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      coberturaState.modo = btn.dataset.modo;
+      renderCoberturaActivos();
+    });
+  });
+}
+initCoberturaToggle();
+
+
 // ===================== MASTER RENDER (Activos) =====================
 function renderActivos(){
   renderActivosFilterBar();
@@ -3669,6 +3898,7 @@ function renderActivos(){
   renderActivosTipoChart();
   renderFinanciamientoChips();
   renderFinanciamiento();
+  renderCoberturaActivos();
 }
 
 </script>
