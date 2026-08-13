@@ -326,6 +326,8 @@ td.neg{ color: var(--rose); }
 
 /* ===== RANKING LIST ===== */
 .rank-list{ display:flex; flex-direction:column; gap:10px; }
+.rank-grid .panel{ display:flex; flex-direction:column; }
+.rank-grid .rank-list{ flex:1 1 auto; justify-content:flex-start; }
 .rank-item{ display:grid; grid-template-columns: 18px 1fr auto; gap:12px; align-items:center; }
 .rank-num{ font-family:var(--mono); font-size:11px; color:var(--paper-faint); }
 .rank-name{ font-size:13px; color:var(--paper); }
@@ -669,7 +671,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
         <div class="section-note">Razón social con mayor monto acumulado, separado por tipo de movimiento.</div>
       </div>
-      <div class="grid-2">
+      <div class="grid-2-even rank-grid">
         <div class="panel">
           <div style="font-family:var(--mono); font-size:11px; color:var(--teal-bright); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:14px;">Top ingresos</div>
           <div class="rank-list" id="rank-ingresos"></div>
@@ -1941,6 +1943,44 @@ function colorConOpacidad(color, opacidad){
   return hexConOpacidad(color, opacidad);
 }
 
+// Al dar clic en un rubro de "Evolución mensual", se AÍSLA (no se borra) — y se guarda por
+// canvasId para que cada pestaña donde aparece esta gráfica tenga su propia selección.
+const _rubroFiltroEvolucion = {};
+
+// Ingreso y Egreso del MISMO rubro comparten el color base, pero con tonalidad distinta
+// (oscuro = ingreso, claro = egreso) para poder distinguirlos de un vistazo.
+function variantesDeColorRubro(hexBase){
+  const r = parseInt(hexBase.slice(1,3),16), g = parseInt(hexBase.slice(3,5),16), b = parseInt(hexBase.slice(5,7),16);
+  const ajustar = (factor) => {
+    const cap = (v)=>Math.max(0,Math.min(255,Math.round(v*factor)));
+    return `rgb(${cap(r)},${cap(g)},${cap(b)})`;
+  };
+  return { ingreso: ajustar(0.72), egreso: ajustar(1.4) };
+}
+
+function actualizarBarraRubroEvolucion(canvasId){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  let barra = document.getElementById(canvasId + '-rubro-bar');
+  if(!barra){
+    barra = document.createElement('div');
+    barra.id = canvasId + '-rubro-bar';
+    barra.style.cssText = 'font-family:var(--sans); font-size:12px; color:var(--paper-dim); margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;';
+    canvas.insertAdjacentElement('afterend', barra);
+  }
+  const seleccion = _rubroFiltroEvolucion[canvasId] || [];
+  if(seleccion.length === 0){
+    barra.innerHTML = '<span style="color:var(--paper-faint); font-size:11.5px;">Da clic en un rubro de la gráfica para aislarlo (se muestra su ingreso y egreso juntos, mismo color en distinta tonalidad). Puedes ir agregando varios.</span>';
+    return;
+  }
+  barra.innerHTML = `<span>Mostrando: <b>${seleccion.map(displayCategoria).join(', ')}</b></span>
+    <button id="${canvasId}-rubro-clear" style="font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--rose); background:none; border:1px solid rgba(224,32,60,0.3); border-radius:14px; padding:4px 10px; cursor:pointer;">✕ Borrar filtros</button>`;
+  document.getElementById(canvasId+'-rubro-clear').addEventListener('click', ()=>{
+    _rubroFiltroEvolucion[canvasId] = [];
+    renderEvolucion(canvasId);
+  });
+}
+
 const _chartsEvolucion = {}; // registro de instancias por canvasId (para reutilizar la misma gráfica en 3 pestañas)
 function renderEvolucion(canvasId){
   canvasId = canvasId || 'chart-evolucion';
@@ -1961,32 +2001,62 @@ function renderEvolucion(canvasId){
   const mesesResaltados = state.meses.length ? state.meses : null;
   const opacidadDe = (mes) => (mesesResaltados && !mesesResaltados.includes(mes)) ? 0.28 : 1;
 
-  // Categorías presentes en ingreso y en egreso (cada bloque con su propio set de tonalidades).
-  const categoriasIngreso = [...new Set(baseRows.filter(r=>r.tipo_mov==='INGRESO').map(r=>r.categoria))];
-  const categoriasEgreso = [...new Set(baseRows.filter(r=>r.tipo_mov==='EGRESO').map(r=>r.categoria))];
-  const tonosIngreso = tonalidadesDe('#00875f', categoriasIngreso.length);
-  const tonosEgreso = tonalidadesDe('#e0203c', categoriasEgreso.length);
+  const rubrosSeleccionados = _rubroFiltroEvolucion[canvasId] || [];
+  const catColorMap = getCategoriaColorMap();
+  let datasetsIngreso, datasetsEgreso;
 
-  const datasetsIngreso = categoriasIngreso.map((cat,i) => {
-    const filas = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
-    return {
-      type:'bar', label: displayCategoria(cat), stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
-      _counts: filas.map(f=>f.length),
-      data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
-      borderColor: tonosIngreso[i], borderWidth:0, order:2,
-      backgroundColor: periodos.map(p => hexConOpacidad(tonosIngreso[i], opacidadDe(p.mes))),
-    };
-  });
-  const datasetsEgreso = categoriasEgreso.map((cat,i) => {
-    const filas = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
-    return {
-      type:'bar', label: displayCategoria(cat), stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
-      _counts: filas.map(f=>f.length),
-      data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
-      borderColor: tonosEgreso[i], borderWidth:0, order:2,
-      backgroundColor: periodos.map(p => hexConOpacidad(tonosEgreso[i], opacidadDe(p.mes))),
-    };
-  });
+  if(rubrosSeleccionados.length === 0){
+    // Vista normal: todas las categorías, agrupadas por Ingreso/Egreso con su propia paleta.
+    const categoriasIngreso = [...new Set(baseRows.filter(r=>r.tipo_mov==='INGRESO').map(r=>r.categoria))];
+    const categoriasEgreso = [...new Set(baseRows.filter(r=>r.tipo_mov==='EGRESO').map(r=>r.categoria))];
+    const tonosIngreso = tonalidadesDe('#00875f', categoriasIngreso.length);
+    const tonosEgreso = tonalidadesDe('#e0203c', categoriasEgreso.length);
+
+    datasetsIngreso = categoriasIngreso.map((cat,i) => {
+      const filas = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
+      return {
+        type:'bar', label: displayCategoria(cat), stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
+        _counts: filas.map(f=>f.length),
+        data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+        borderColor: tonosIngreso[i], borderWidth:0, order:2,
+        backgroundColor: periodos.map(p => hexConOpacidad(tonosIngreso[i], opacidadDe(p.mes))),
+      };
+    });
+    datasetsEgreso = categoriasEgreso.map((cat,i) => {
+      const filas = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
+      return {
+        type:'bar', label: displayCategoria(cat), stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
+        _counts: filas.map(f=>f.length),
+        data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+        borderColor: tonosEgreso[i], borderWidth:0, order:2,
+        backgroundColor: periodos.map(p => hexConOpacidad(tonosEgreso[i], opacidadDe(p.mes))),
+      };
+    });
+  } else {
+    // Vista aislada: solo los rubros en que se ha dado clic — cada uno con su Ingreso (tono
+    // oscuro) y Egreso (tono claro) del MISMO color, para comparar de un vistazo.
+    datasetsIngreso = []; datasetsEgreso = [];
+    rubrosSeleccionados.forEach(cat => {
+      const base = catColorMap[cat] || '#5a5a66';
+      const tonos = variantesDeColorRubro(base);
+      const filasIng = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
+      const filasEgr = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
+      datasetsIngreso.push({
+        type:'bar', label: displayCategoria(cat) + ' — Ingreso', stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
+        _counts: filasIng.map(f=>f.length),
+        data: filasIng.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+        borderColor: tonos.ingreso, borderWidth:0, order:2,
+        backgroundColor: periodos.map(p => colorConOpacidad(tonos.ingreso, opacidadDe(p.mes))),
+      });
+      datasetsEgreso.push({
+        type:'bar', label: displayCategoria(cat) + ' — Egreso', stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
+        _counts: filasEgr.map(f=>f.length),
+        data: filasEgr.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+        borderColor: tonos.egreso, borderWidth:0, order:2,
+        backgroundColor: periodos.map(p => colorConOpacidad(tonos.egreso, opacidadDe(p.mes))),
+      });
+    });
+  }
   // La utilidad se dibuja sobre el eje secundario para que no se vea aplastada por las barras apiladas.
   const utilidad = periodos.map(p => {
     const rowsP = baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio);
@@ -2007,15 +2077,12 @@ function renderEvolucion(canvasId){
       onClick: (evt, elements) => {
         if(!elements.length) return;
         const ds = chart.data.datasets[elements[0].datasetIndex];
-        if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica un único tipo de movimiento
-        const periodo = periodos[elements[0].index];
-        goToMovimientosFiltrado({
-          empresa: state.empresas.length === 1 ? state.empresas[0] : '',
-          categoria: ds._categoria,
-          tipoMov: ds._tipoMov,
-          mes: periodo.mes,
-          anio: periodo.anio,
-        });
+        if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica a un rubro específico
+        const actual = _rubroFiltroEvolucion[canvasId] || [];
+        const idx = actual.indexOf(ds._categoria);
+        if(idx === -1) actual.push(ds._categoria); else actual.splice(idx, 1);
+        _rubroFiltroEvolucion[canvasId] = actual;
+        renderEvolucion(canvasId);
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
@@ -2032,8 +2099,10 @@ function renderEvolucion(canvasId){
               if(!ctx.dataset._tipoMov) return `${fmtMoney(ctx.parsed.y)}`;
               const n = ctx.dataset._counts ? ctx.dataset._counts[ctx.dataIndex] : null;
               const tipoTxt = ctx.dataset._tipoMov === 'INGRESO' ? 'Ingreso' : 'Egreso';
+              const yaAislado = (_rubroFiltroEvolucion[canvasId]||[]).includes(ctx.dataset._categoria);
               const lineas = [`${tipoTxt}: ${fmtMoney(ctx.parsed.y)}`];
-              if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'} · clic para ver el detalle`);
+              if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'}`);
+              lineas.push(yaAislado ? 'clic para quitar este rubro' : 'clic para aislar este rubro (ingreso + egreso)');
               return lineas;
             }
           } }
@@ -2044,6 +2113,7 @@ function renderEvolucion(canvasId){
       }
     }
   });
+  actualizarBarraRubroEvolucion(canvasId);
   _chartsEvolucion[canvasId] = chart;
 }
 
@@ -2708,7 +2778,7 @@ function renderEmpresasChartCore(canvasId, rankId, chartKey){
     const sorted = [...data].sort((a,b)=>b.margen-a.margen);
     const maxAbs = Math.max(...sorted.map(d=>Math.abs(d.margen)), 1);
     rankEl.innerHTML =
-      `<div style="font-family:var(--mono); font-size:11px; color:var(--gold); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:14px;">Margen por empresa</div>` +
+      `<div style="font-family:var(--mono); font-size:11px; color:var(--gold); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:14px;">Margen Neto</div>` +
       sorted.map((d,i)=>{
         const widthPct = Math.abs(d.margen)/maxAbs*100;
         const fillClass = d.margen>=0 ? 'teal' : '';
@@ -3036,11 +3106,26 @@ function renderCompositionInto(gridId, prefijo){
   const empresas = state.empresas.length ? state.empresas : EMPRESAS;
   const grid = document.getElementById(gridId);
   if(!grid) return;
+
+  // Mientras menos empresas queden en el filtro, más grande se ve cada tarjeta (menos columnas,
+  // canvas más alto, letra más grande) — y el bloque completo se centra en vez de quedarse
+  // pegado a la izquierda con espacio vacío al lado.
+  const cols = Math.max(1, Math.min(empresas.length, 3));
+  const alturaCanvas = cols === 1 ? 340 : (cols === 2 ? 250 : 180);
+  const tituloFont = cols === 1 ? 22 : (cols === 2 ? 19 : 16);
+  const anchoMax = cols === 1 ? '420px' : (cols === 2 ? '760px' : 'none');
+
+  grid.style.display = 'grid';
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.style.gap = '14px';
+  grid.style.maxWidth = anchoMax;
+  grid.style.margin = cols < 3 ? '0 auto' : '0';
+
   grid.innerHTML = empresas.map(e=>`
     <div class="panel">
-      <div style="font-family:var(--serif); font-size:16px; font-weight:600; margin-bottom:4px;">${e}</div>
+      <div style="font-family:var(--serif); font-size:${tituloFont}px; font-weight:600; margin-bottom:4px;">${e}</div>
       <div style="font-family:var(--mono); font-size:10.5px; color:var(--paper-faint); margin-bottom:12px;">Composición de ingreso</div>
-      <canvas id="${prefijo}${e}" height="180"></canvas>
+      <canvas id="${prefijo}${e}" height="${alturaCanvas}"></canvas>
     </div>
   `).join('');
 
@@ -3055,7 +3140,7 @@ function renderCompositionInto(gridId, prefijo){
     const entries = Object.entries(map).sort((a,b)=>b[1]-a[1]);
     const ctx = document.getElementById(`${prefijo}${e}`);
     if(!ctx) return;
-    const palette = ['#0066ff','#00b368','#ff6a00','#8b2fd6','#e8112d','#00b8d9','#d4a300','#ff3d8a'];
+    const palette = CATEGORIA_PALETTE;
     const chart = new Chart(ctx, {
       type:'doughnut',
       data:{
