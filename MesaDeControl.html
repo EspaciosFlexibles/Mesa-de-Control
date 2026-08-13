@@ -1943,8 +1943,9 @@ function colorConOpacidad(color, opacidad){
   return hexConOpacidad(color, opacidad);
 }
 
-// Al dar clic en un rubro de "Evolución mensual", se AÍSLA (no se borra) — y se guarda por
-// canvasId para que cada pestaña donde aparece esta gráfica tenga su propia selección.
+// Al dar clic en un rubro de "Evolución mensual" se AÍSLA (guardado por canvasId, un solo
+// rubro a la vez). Con el rubro ya aislado, el siguiente clic sobre la gráfica te lleva a
+// Movimientos filtrado — es un flujo de dos pasos: 1) aislar, 2) ver el detalle.
 const _rubroFiltroEvolucion = {};
 
 // Ingreso y Egreso del MISMO rubro comparten el color base, pero con tonalidad distinta
@@ -1968,15 +1969,15 @@ function actualizarBarraRubroEvolucion(canvasId){
     barra.style.cssText = 'font-family:var(--sans); font-size:12px; color:var(--paper-dim); margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;';
     canvas.insertAdjacentElement('afterend', barra);
   }
-  const seleccion = _rubroFiltroEvolucion[canvasId] || [];
-  if(seleccion.length === 0){
-    barra.innerHTML = '<span style="color:var(--paper-faint); font-size:11.5px;">Da clic en un rubro de la gráfica para aislarlo (se muestra su ingreso y egreso juntos, mismo color en distinta tonalidad). Puedes ir agregando varios.</span>';
+  const rubro = _rubroFiltroEvolucion[canvasId];
+  if(!rubro){
+    barra.innerHTML = '<span style="color:var(--paper-faint); font-size:11.5px;">Da clic en un rubro de la gráfica para aislarlo (se muestra su ingreso y egreso juntos, mismo color en distinta tonalidad). Con el rubro aislado, el siguiente clic te lleva al detalle en Movimientos.</span>';
     return;
   }
-  barra.innerHTML = `<span>Mostrando: <b>${seleccion.map(displayCategoria).join(', ')}</b></span>
-    <button id="${canvasId}-rubro-clear" style="font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--rose); background:none; border:1px solid rgba(224,32,60,0.3); border-radius:14px; padding:4px 10px; cursor:pointer;">✕ Borrar filtros</button>`;
+  barra.innerHTML = `<span>Mostrando: <b>${displayCategoria(rubro)}</b> — da clic en la gráfica para ver el detalle en Movimientos</span>
+    <button id="${canvasId}-rubro-clear" style="font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--rose); background:none; border:1px solid rgba(224,32,60,0.3); border-radius:14px; padding:4px 10px; cursor:pointer;">✕ Borrar filtro</button>`;
   document.getElementById(canvasId+'-rubro-clear').addEventListener('click', ()=>{
-    _rubroFiltroEvolucion[canvasId] = [];
+    delete _rubroFiltroEvolucion[canvasId];
     renderEvolucion(canvasId);
   });
 }
@@ -2001,11 +2002,11 @@ function renderEvolucion(canvasId){
   const mesesResaltados = state.meses.length ? state.meses : null;
   const opacidadDe = (mes) => (mesesResaltados && !mesesResaltados.includes(mes)) ? 0.28 : 1;
 
-  const rubrosSeleccionados = _rubroFiltroEvolucion[canvasId] || [];
+  const rubroAislado = _rubroFiltroEvolucion[canvasId] || null;
   const catColorMap = getCategoriaColorMap();
   let datasetsIngreso, datasetsEgreso;
 
-  if(rubrosSeleccionados.length === 0){
+  if(!rubroAislado){
     // Vista normal: todas las categorías, agrupadas por Ingreso/Egreso con su propia paleta.
     const categoriasIngreso = [...new Set(baseRows.filter(r=>r.tipo_mov==='INGRESO').map(r=>r.categoria))];
     const categoriasEgreso = [...new Set(baseRows.filter(r=>r.tipo_mov==='EGRESO').map(r=>r.categoria))];
@@ -2033,29 +2034,27 @@ function renderEvolucion(canvasId){
       };
     });
   } else {
-    // Vista aislada: solo los rubros en que se ha dado clic — cada uno con su Ingreso (tono
-    // oscuro) y Egreso (tono claro) del MISMO color, para comparar de un vistazo.
-    datasetsIngreso = []; datasetsEgreso = [];
-    rubrosSeleccionados.forEach(cat => {
-      const base = catColorMap[cat] || '#5a5a66';
-      const tonos = variantesDeColorRubro(base);
-      const filasIng = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
-      const filasEgr = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
-      datasetsIngreso.push({
-        type:'bar', label: displayCategoria(cat) + ' — Ingreso', stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
-        _counts: filasIng.map(f=>f.length),
-        data: filasIng.map(f=>f.reduce((a,r)=>a+r.monto,0)),
-        borderColor: tonos.ingreso, borderWidth:0, order:2,
-        backgroundColor: periodos.map(p => colorConOpacidad(tonos.ingreso, opacidadDe(p.mes))),
-      });
-      datasetsEgreso.push({
-        type:'bar', label: displayCategoria(cat) + ' — Egreso', stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
-        _counts: filasEgr.map(f=>f.length),
-        data: filasEgr.map(f=>f.reduce((a,r)=>a+r.monto,0)),
-        borderColor: tonos.egreso, borderWidth:0, order:2,
-        backgroundColor: periodos.map(p => colorConOpacidad(tonos.egreso, opacidadDe(p.mes))),
-      });
-    });
+    // Vista aislada: solo el rubro en que se dio clic — Ingreso (tono oscuro) y Egreso (tono
+    // claro) del MISMO color, para comparar de un vistazo. El siguiente clic navega al detalle.
+    const cat = rubroAislado;
+    const base = catColorMap[cat] || '#5a5a66';
+    const tonos = variantesDeColorRubro(base);
+    const filasIng = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
+    const filasEgr = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
+    datasetsIngreso = [{
+      type:'bar', label: displayCategoria(cat) + ' — Ingreso', stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
+      _counts: filasIng.map(f=>f.length),
+      data: filasIng.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+      borderColor: tonos.ingreso, borderWidth:0, order:2,
+      backgroundColor: periodos.map(p => colorConOpacidad(tonos.ingreso, opacidadDe(p.mes))),
+    }];
+    datasetsEgreso = [{
+      type:'bar', label: displayCategoria(cat) + ' — Egreso', stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
+      _counts: filasEgr.map(f=>f.length),
+      data: filasEgr.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+      borderColor: tonos.egreso, borderWidth:0, order:2,
+      backgroundColor: periodos.map(p => colorConOpacidad(tonos.egreso, opacidadDe(p.mes))),
+    }];
   }
   // La utilidad se dibuja sobre el eje secundario para que no se vea aplastada por las barras apiladas.
   const utilidad = periodos.map(p => {
@@ -2078,11 +2077,22 @@ function renderEvolucion(canvasId){
         if(!elements.length) return;
         const ds = chart.data.datasets[elements[0].datasetIndex];
         if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica a un rubro específico
-        const actual = _rubroFiltroEvolucion[canvasId] || [];
-        const idx = actual.indexOf(ds._categoria);
-        if(idx === -1) actual.push(ds._categoria); else actual.splice(idx, 1);
-        _rubroFiltroEvolucion[canvasId] = actual;
-        renderEvolucion(canvasId);
+        const yaAislado = _rubroFiltroEvolucion[canvasId];
+        if(!yaAislado){
+          // Paso 1: nada aislado todavía -> aísla este rubro.
+          _rubroFiltroEvolucion[canvasId] = ds._categoria;
+          renderEvolucion(canvasId);
+        } else {
+          // Paso 2: ya está aislado -> este clic te lleva al detalle en Movimientos.
+          const periodo = periodos[elements[0].index];
+          goToMovimientosFiltrado({
+            empresa: state.empresas.length === 1 ? state.empresas[0] : '',
+            categoria: ds._categoria,
+            tipoMov: ds._tipoMov,
+            mes: periodo.mes,
+            anio: periodo.anio,
+          });
+        }
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
@@ -2099,10 +2109,10 @@ function renderEvolucion(canvasId){
               if(!ctx.dataset._tipoMov) return `${fmtMoney(ctx.parsed.y)}`;
               const n = ctx.dataset._counts ? ctx.dataset._counts[ctx.dataIndex] : null;
               const tipoTxt = ctx.dataset._tipoMov === 'INGRESO' ? 'Ingreso' : 'Egreso';
-              const yaAislado = (_rubroFiltroEvolucion[canvasId]||[]).includes(ctx.dataset._categoria);
+              const yaAislado = !!_rubroFiltroEvolucion[canvasId];
               const lineas = [`${tipoTxt}: ${fmtMoney(ctx.parsed.y)}`];
               if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'}`);
-              lineas.push(yaAislado ? 'clic para quitar este rubro' : 'clic para aislar este rubro (ingreso + egreso)');
+              lineas.push(yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este rubro (ingreso + egreso)');
               return lineas;
             }
           } }
@@ -2571,6 +2581,9 @@ initERToggle();
 // ===================== TENDENCIA POR LÍNEA DE NEGOCIO (CATEGORÍA) =====================
 const tendenciaState = { tipoMov: 'INGRESO' };
 let chartTendenciaCategoria = null;
+// Un solo rubro a la vez: se aísla dando clic en la LEYENDA (arriba de la gráfica), no en la
+// línea directa. Con el rubro ya aislado, el siguiente clic sobre la gráfica (en cualquier mes)
+// te lleva al detalle en Movimientos.
 const _rubroFiltroTendencia = {};
 
 function actualizarBarraRubroTendencia(canvasId){
@@ -2583,15 +2596,15 @@ function actualizarBarraRubroTendencia(canvasId){
     barra.style.cssText = 'font-family:var(--sans); font-size:12px; color:var(--paper-dim); margin-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;';
     canvas.insertAdjacentElement('afterend', barra);
   }
-  const seleccion = _rubroFiltroTendencia[canvasId] || [];
-  if(seleccion.length === 0){
-    barra.innerHTML = '<span style="color:var(--paper-faint); font-size:11.5px;">Da clic en una línea para aislar ese rubro (se muestra su ingreso y egreso juntos, mismo color en distinta tonalidad, sin importar el toggle Ingreso/Egreso). Puedes ir agregando varias.</span>';
+  const rubro = _rubroFiltroTendencia[canvasId];
+  if(!rubro){
+    barra.innerHTML = '<span style="color:var(--paper-faint); font-size:11.5px;">Da clic en un nombre de la leyenda de arriba para aislar ese rubro (se muestra su ingreso y egreso juntos, mismo color en distinta tonalidad, sin importar el toggle). Con el rubro aislado, el siguiente clic en la gráfica te lleva al detalle en Movimientos.</span>';
     return;
   }
-  barra.innerHTML = `<span>Mostrando: <b>${seleccion.map(displayCategoria).join(', ')}</b></span>
-    <button id="${canvasId}-rubro-clear-t" style="font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--rose); background:none; border:1px solid rgba(224,32,60,0.3); border-radius:14px; padding:4px 10px; cursor:pointer;">✕ Borrar filtros</button>`;
+  barra.innerHTML = `<span>Mostrando: <b>${displayCategoria(rubro)}</b> — da clic en la gráfica para ver el detalle en Movimientos</span>
+    <button id="${canvasId}-rubro-clear-t" style="font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--rose); background:none; border:1px solid rgba(224,32,60,0.3); border-radius:14px; padding:4px 10px; cursor:pointer;">✕ Borrar filtro</button>`;
   document.getElementById(canvasId+'-rubro-clear-t').addEventListener('click', ()=>{
-    _rubroFiltroTendencia[canvasId] = [];
+    delete _rubroFiltroTendencia[canvasId];
     renderTendenciaCategoria();
   });
 }
@@ -2601,12 +2614,12 @@ function renderTendenciaCategoria(){
   const ctx = document.getElementById(canvasId);
   if(!ctx) return;
 
-  const rubrosSeleccionados = _rubroFiltroTendencia[canvasId] || [];
+  const rubroAislado = _rubroFiltroTendencia[canvasId] || null;
   const catColorMap = getCategoriaColorMap();
   const mesesResaltados = state.meses.length ? state.meses : null;
   let baseRows, periodos, labels, datasets;
 
-  if(rubrosSeleccionados.length === 0){
+  if(!rubroAislado){
     // Vista normal: respeta el toggle Ingreso/Egreso, una línea por categoría.
     baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
       (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
@@ -2620,7 +2633,7 @@ function renderTendenciaCategoria(){
     datasets = categorias.map((cat, i) => {
       const colorBase = catColorMap[cat] || CATEGORIA_PALETTE[i % CATEGORIA_PALETTE.length];
       return {
-        label: cat, _categoria: cat,
+        label: cat, _categoria: cat, _tipoMov: tendenciaState.tipoMov,
         data: periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.categoria===cat).reduce((a,r)=>a+r.monto,0)),
         borderColor: colorBase,
         backgroundColor: colorBase,
@@ -2630,8 +2643,9 @@ function renderTendenciaCategoria(){
       };
     });
   } else {
-    // Vista aislada: ignora el toggle Ingreso/Egreso — muestra AMBOS para cada rubro
-    // seleccionado, mismo color base con tonalidad distinta (oscuro=ingreso, claro=egreso).
+    // Vista aislada: ignora el toggle Ingreso/Egreso — muestra AMBOS del rubro aislado, mismo
+    // color base con tonalidad distinta (oscuro=ingreso, claro=egreso).
+    const cat = rubroAislado;
     baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
       (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
       (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
@@ -2639,21 +2653,16 @@ function renderTendenciaCategoria(){
     periodos = getPeriodosOrdenados(baseRows);
     labels = periodos.map(labelPeriodo);
 
-    datasets = [];
-    rubrosSeleccionados.forEach(cat => {
-      const base = catColorMap[cat] || '#5a5a66';
-      const tonos = variantesDeColorRubro(base);
-      [['INGRESO', tonos.ingreso, ' — Ingreso'], ['EGRESO', tonos.egreso, ' — Egreso']].forEach(([tipoMov, color, sufijo]) => {
-        datasets.push({
-          label: cat + sufijo, _categoria: cat,
-          data: periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.categoria===cat && r.tipo_mov===tipoMov).reduce((a,r)=>a+r.monto,0)),
-          borderColor: color, backgroundColor: color,
-          borderWidth: 2, tension: 0.3, fill: false,
-          pointRadius: periodos.map(p => mesesResaltados ? (mesesResaltados.includes(p.mes) ? 5 : 2) : 3),
-          pointBackgroundColor: periodos.map(p => mesesResaltados && !mesesResaltados.includes(p.mes) ? colorConOpacidad(color, 0.35) : color),
-        });
-      });
-    });
+    const base = catColorMap[cat] || '#5a5a66';
+    const tonos = variantesDeColorRubro(base);
+    datasets = [['INGRESO', tonos.ingreso, ' — Ingreso'], ['EGRESO', tonos.egreso, ' — Egreso']].map(([tipoMov, color, sufijo]) => ({
+      label: cat + sufijo, _categoria: cat, _tipoMov: tipoMov,
+      data: periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.categoria===cat && r.tipo_mov===tipoMov).reduce((a,r)=>a+r.monto,0)),
+      borderColor: color, backgroundColor: color,
+      borderWidth: 2, tension: 0.3, fill: false,
+      pointRadius: periodos.map(p => mesesResaltados ? (mesesResaltados.includes(p.mes) ? 5 : 2) : 3),
+      pointBackgroundColor: periodos.map(p => mesesResaltados && !mesesResaltados.includes(p.mes) ? colorConOpacidad(color, 0.35) : color),
+    }));
   }
 
   if(chartTendenciaCategoria) chartTendenciaCategoria.destroy();
@@ -2667,22 +2676,38 @@ function renderTendenciaCategoria(){
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
       onClick: (evt, elements) => {
         if(!elements.length) return;
+        // El clic directo en la gráfica solo navega — y solo cuando ya hay un rubro aislado
+        // (aislar se hace desde la leyenda, no desde la línea).
+        if(!_rubroFiltroTendencia[canvasId]) return;
         const ds = chartTendenciaCategoria.data.datasets[elements[0].datasetIndex];
-        const actual = _rubroFiltroTendencia[canvasId] || [];
-        const idx = actual.indexOf(ds._categoria);
-        if(idx === -1) actual.push(ds._categoria); else actual.splice(idx, 1);
-        _rubroFiltroTendencia[canvasId] = actual;
-        renderTendenciaCategoria();
+        const periodo = periodos[elements[0].index];
+        goToMovimientosFiltrado({
+          empresa: state.empresas.length === 1 ? state.empresas[0] : '',
+          categoria: ds._categoria,
+          tipoMov: ds._tipoMov,
+          mes: periodo.mes,
+          anio: periodo.anio,
+        });
       },
       onHover: (evt, elements) => {
-        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+        evt.native.target.style.cursor = (elements.length && _rubroFiltroTendencia[canvasId]) ? 'pointer' : 'default';
       },
       plugins:{
-        legend:{ position:'top', align:'end', labels:{ color:'#15151a', font:{family:'Inter', size:11.5}, boxWidth:11, usePointStyle:true, pointStyle:'circle' } },
+        legend:{
+          position:'top', align:'end', labels:{ color:'#15151a', font:{family:'Inter', size:11.5}, boxWidth:11, usePointStyle:true, pointStyle:'circle' },
+          onClick: (evt, legendItem, legend) => {
+            // La leyenda es donde se aísla un rubro — no el comportamiento normal de
+            // Chart.js de ocultar la línea.
+            if(_rubroFiltroTendencia[canvasId]) return; // ya hay uno aislado: la leyenda no hace nada hasta que se borre el filtro
+            const ds = legend.chart.data.datasets[legendItem.datasetIndex];
+            _rubroFiltroTendencia[canvasId] = ds._categoria;
+            renderTendenciaCategoria();
+          }
+        },
         tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:10,
           callbacks:{ label:(ctx)=>{
-            const yaAislado = (_rubroFiltroTendencia[canvasId]||[]).includes(ctx.dataset._categoria);
-            const hint = yaAislado ? 'clic para quitar este rubro' : 'clic para aislar este rubro (ingreso + egreso)';
+            const yaAislado = !!_rubroFiltroTendencia[canvasId];
+            const hint = yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic en la leyenda de arriba para aislar este rubro';
             return `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)} · ${hint}`;
           } } }
       },
