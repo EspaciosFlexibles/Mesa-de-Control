@@ -156,6 +156,37 @@ body{
 }
 .reset-btn:hover{ color: var(--rose); border-color: var(--rose); }
 
+/* ===== GLOBAL FILTER BAR (fija arriba de las 5 pestañas) ===== */
+.global-filterbar{
+  position: sticky; top: 0; z-index: 80;
+  display:flex; flex-wrap:wrap; gap: 10px; align-items:center;
+  background: #fff;
+  padding: 14px 0;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--line-strong);
+  box-shadow: 0 4px 14px rgba(20,20,30,0.05);
+}
+.global-filterbar .flabel{ font-family: var(--mono); font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase; color: var(--paper-faint); margin-right:2px; }
+.msdrop{ position:relative; }
+.msdrop-btn{
+  font-family: var(--sans); font-size: 13px; font-weight:500;
+  padding: 8px 14px; border-radius:20px; border:1px solid var(--line-strong);
+  background: var(--panel); color: var(--paper-dim); cursor:pointer; white-space:nowrap;
+  transition: all .15s ease;
+}
+.msdrop-btn:hover{ border-color: var(--copper); color: var(--paper); }
+.msdrop-btn.has-value{ background: var(--teal); border-color: var(--teal); color:#04201b; font-weight:600; }
+.msdrop-panel{
+  position:absolute; top: calc(100% + 8px); left:0; min-width:220px; max-height:320px; overflow-y:auto;
+  background:#fff; border:1px solid var(--line-strong); border-radius:12px;
+  box-shadow: 0 12px 32px rgba(20,20,30,0.14);
+  padding:8px; z-index:90; display:none;
+}
+.msdrop-item{ display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; cursor:pointer; font-family:var(--sans); font-size:13.5px; color:var(--paper); user-select:none; }
+.msdrop-item:hover{ background: var(--panel-raised); }
+.msdrop-item input{ margin:0; accent-color: var(--teal-bright); cursor:pointer; }
+.msdrop-empty{ padding:8px 9px; color:var(--paper-faint); font-size:12.5px; font-family:var(--sans); }
+
 /* ===== KPI ROW ===== */
 .kpi-row{ display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; margin-bottom: 28px; }
 .kpi{
@@ -443,18 +474,28 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <button class="tab-btn" data-tab="flujo-efectivo">Flujo de Efectivo</button>
   </div>
 
+  <!-- FILTRO GLOBAL — fijo arriba de las 5 pestañas, gobierna todo el panel -->
+  <div class="global-filterbar" id="global-filterbar">
+    <span class="flabel">AÑO</span>
+    <div class="msdrop" id="msdrop-anio">
+      <button class="msdrop-btn" type="button" id="msdrop-btn-anio">Todos ▾</button>
+      <div class="msdrop-panel" id="msdrop-panel-anio"></div>
+    </div>
+    <span class="flabel">MES</span>
+    <div class="msdrop" id="msdrop-mes">
+      <button class="msdrop-btn" type="button" id="msdrop-btn-mes">Todos ▾</button>
+      <div class="msdrop-panel" id="msdrop-panel-mes"></div>
+    </div>
+    <span class="flabel">EMPRESA</span>
+    <div class="msdrop" id="msdrop-empresa">
+      <button class="msdrop-btn" type="button" id="msdrop-btn-empresa">Todas ▾</button>
+      <div class="msdrop-panel" id="msdrop-panel-empresa"></div>
+    </div>
+    <button class="reset-btn" id="reset-btn">↺ LIMPIAR FILTROS</button>
+  </div>
+
   <!-- ===================== TAB: FLUJOS ===================== -->
   <div class="tab-panel" id="tab-flujos">
-
-    <div class="filterbar" id="filterbar">
-      <span class="flabel">AÑO</span>
-      <div class="chip-group" id="chips-anio"></div>
-      <span class="flabel">EMPRESA</span>
-      <div class="chip-group" id="chips-empresa"></div>
-      <span class="flabel">CORTE</span>
-      <div class="chip-group" id="chips-mes"></div>
-      <button class="reset-btn" id="reset-btn">↺ LIMPIAR FILTROS</button>
-    </div>
 
     <!-- EVOLUTION -->
     <section class="section">
@@ -868,11 +909,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
   <!-- ===================== TAB: ACTIVOS ===================== -->
   <div class="tab-panel" id="tab-activos" style="display:none;">
 
-    <div class="filterbar" id="activos-filterbar">
-      <span class="flabel">EMPRESA</span>
-      <div class="chip-group" id="activos-chips-empresa"></div>
-    </div>
-
     <!-- ACTIVOS PENDIENTES DE PAGO -->
     <section class="section">
       <div class="section-head">
@@ -988,7 +1024,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
         <div class="section-note">Compara cada empresa sin tomar en cuenta inversiones de capital, contra la misma empresa incluyendo esas inversiones y las rentas que ya generan.</div>
       </div>
-      <div class="chip-group" id="financiamiento-chips-empresa" style="margin-bottom:14px;"></div>
       <div class="panel">
         <canvas id="chart-financiamiento" height="110"></canvas>
       </div>
@@ -1012,16 +1047,8 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
           <button data-modo="acumulado">+ Flujo acumulado</button>
         </div>
       </div>
-      <div class="section-note" style="text-align:left; max-width:none; margin-bottom:6px;">
-        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. El toggle de arriba solo cambia la gráfica — la tabla siempre muestra el detalle completo.
-      </div>
-      <div style="margin-bottom:6px;">
-        <label style="display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--paper-faint); margin-bottom:6px;">Empresas (elige una o varias — vacío = todas)</label>
-        <div class="chip-group" id="cobertura-chips-empresa"></div>
-      </div>
-      <div style="margin-bottom:14px;">
-        <label style="display:block; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--paper-faint); margin-bottom:6px;">Meses (elige uno o varios — vacío = todos)</label>
-        <div class="chip-group" id="cobertura-chips-mes"></div>
+      <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;">
+        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. El toggle de arriba solo cambia la gráfica — la tabla siempre muestra el detalle completo. Usa el filtro de Año/Mes/Empresa de arriba de la página para acotar esta vista.
       </div>
       <div class="panel">
         <canvas id="chart-cobertura" height="110"></canvas>
@@ -1048,11 +1075,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       <div class="panel">
         <div class="movs-toolbar">
           <input type="text" id="movs-search" class="movs-search" placeholder="Buscar por razón social, empresa, línea...">
-          <select id="movs-filtro-empresa" class="movs-select"><option value="">Todas las empresas</option></select>
-          <div class="movs-multiselect" id="movs-mes-multiselect">
-            <button class="movs-select" id="movs-mes-toggle" type="button">Todos los meses ▾</button>
-            <div class="movs-multiselect-panel" id="movs-mes-panel" style="display:none;"></div>
-          </div>
           <select id="movs-filtro-categoria" class="movs-select"><option value="">Todas las líneas</option></select>
           <select id="movs-filtro-activo" class="movs-select"><option value="">Todos los activos</option></select>
           <select id="movs-filtro-tipomov" class="movs-select">
@@ -1107,7 +1129,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;">
         Clasificación leída en vivo de tu tabla "Tipos para Edo de Resultados" (hoja Activos, columnas Q:R): Costos, Gastos, Impuestos e Inversión/Capital. Si agregas o cambias algo ahí, se refleja aquí solo. Cualquier Tipo nuevo que captures y aún no esté en esa tabla cae por default en "Gastos" hasta que lo clasifiques. Cada mes se calcula por separado — para ver la posición de caja acumulada, ve a la pestaña "Flujo de Efectivo".
       </div>
-      <div class="er-chips" id="er-empresa-chips"></div>
       <div class="panel pivot-wrap">
         <table class="pivot" id="er-table"></table>
       </div>
@@ -1528,6 +1549,11 @@ const state = {
   anios: [],    // [] = todos
 };
 
+// true si esa empresa debe mostrarse con el filtro global actual (vacío = todas).
+function empresaEnFiltro(empresa){
+  return state.empresas.length === 0 || state.empresas.includes(empresa);
+}
+
 // La columna "Mes" de tu Sheet todavía no incluye el año, pero desde que agregaste la
 // columna "Fecha", ese es el dato que ahora manda para saber a qué año pertenece cada uno.
 // Si el movimiento ya trae Fecha real (columna nueva), el año sale de ahí — funciona sin
@@ -1567,57 +1593,78 @@ function sumBy(rows, tipo){
 }
 
 // ===================== FILTER BAR RENDER =====================
-function renderFilterBar(){
-  const EMPRESAS = getEmpresas();
-  const mesesConDatos = MESES_ORDEN.filter(m => getAllData().some(r=>r.mes===m));
-  const aniosDisponibles = getAniosDisponibles();
-  const chipsAnio = document.getElementById('chips-anio');
-  const chipsEmpresa = document.getElementById('chips-empresa');
-  const chipsMes = document.getElementById('chips-mes');
+// ===================== BARRA DE FILTRO GLOBAL (fija, gobierna las 5 pestañas) =====================
+// Dropdown genérico multiselección: al abrir, dibuja un checkbox por opción disponible; al
+// marcar/desmarcar, actualiza el arreglo correspondiente en "state" y vuelve a renderizar la
+// pestaña activa. Vacío = sin filtrar (se muestra todo), igual que antes con los chips.
+function crearFiltroGlobalDropdown(key, btnId, panelId, getOptions, getLabel){
+  const btn = document.getElementById(btnId);
+  const panel = document.getElementById(panelId);
+  if(!btn || !panel) return null;
 
-  if(chipsAnio){
-    chipsAnio.innerHTML = aniosDisponibles.map(a =>
-      `<button class="chip teal ${state.anios.includes(a)?'active':''}" data-anio="${a}">${a}</button>`
-    ).join('');
-    chipsAnio.querySelectorAll('.chip').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const v = btn.dataset.anio;
-        const idx = state.anios.indexOf(v);
-        if(idx === -1) state.anios.push(v); else state.anios.splice(idx,1);
-        renderFlujos();
+  function renderPanel(){
+    const opciones = getOptions();
+    panel.innerHTML = opciones.length ? opciones.map(o => `
+      <label class="msdrop-item">
+        <input type="checkbox" value="${o}" ${state[key].includes(o)?'checked':''}>
+        <span>${getLabel ? getLabel(o) : o}</span>
+      </label>
+    `).join('') : '<div class="msdrop-empty">Sin opciones disponibles.</div>';
+
+    panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        const v = cb.value;
+        const idx = state[key].indexOf(v);
+        if(cb.checked && idx === -1) state[key].push(v);
+        else if(!cb.checked && idx !== -1) state[key].splice(idx,1);
+        actualizarBoton();
+        renderCurrentTab();
       });
     });
   }
 
-  chipsEmpresa.innerHTML = EMPRESAS.map((e,i) => {
-    const isActive = state.empresas.includes(e);
-    const style = isActive ? ` style="background:${colorFor(e,i)}; border-color:${colorFor(e,i)}; color:#ffffff;"` : '';
-    return `<button class="chip ${isActive?'active':''}" data-empresa="${e}"${style}>${e}</button>`;
-  }).join('');
-  chipsMes.innerHTML = mesesConDatos.map(m =>
-    `<button class="chip teal ${state.meses.includes(m)?'active':''}" data-mes="${m}">${m.slice(0,3)}</button>`
-  ).join('');
+  function actualizarBoton(){
+    const n = state[key].length;
+    btn.textContent = (n === 0 ? 'Todos' : (n === 1 ? (getLabel ? getLabel(state[key][0]) : state[key][0]) : n + ' seleccionados')) + ' ▾';
+    btn.classList.toggle('has-value', n > 0);
+  }
 
-  chipsEmpresa.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const v = btn.dataset.empresa;
-      const idx = state.empresas.indexOf(v);
-      if(idx === -1) state.empresas.push(v); else state.empresas.splice(idx,1);
-      renderFlujos();
-    });
+  btn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const abierto = panel.style.display === 'block';
+    document.querySelectorAll('.msdrop-panel').forEach(p=>p.style.display='none');
+    if(!abierto){ renderPanel(); panel.style.display = 'block'; }
   });
-  chipsMes.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const v = btn.dataset.mes;
-      const idx = state.meses.indexOf(v);
-      if(idx === -1) state.meses.push(v); else state.meses.splice(idx,1);
-      renderFlujos();
-    });
+  document.addEventListener('click', (e)=>{
+    if(!panel.contains(e.target) && e.target !== btn) panel.style.display = 'none';
+  });
+
+  actualizarBoton();
+  return { actualizarBoton };
+}
+
+let filtroGlobalAnio, filtroGlobalMes, filtroGlobalEmpresa;
+function initFiltroGlobal(){
+  filtroGlobalAnio = crearFiltroGlobalDropdown('anios', 'msdrop-btn-anio', 'msdrop-panel-anio', getAniosDisponibles);
+  filtroGlobalMes = crearFiltroGlobalDropdown('meses', 'msdrop-btn-mes', 'msdrop-panel-mes',
+    () => MESES_ORDEN.filter(m => getAllData().some(r=>r.mes===m)));
+  filtroGlobalEmpresa = crearFiltroGlobalDropdown('empresas', 'msdrop-btn-empresa', 'msdrop-panel-empresa', getEmpresas);
+
+  document.getElementById('reset-btn').addEventListener('click', ()=>{
+    state.empresas = []; state.meses = []; state.anios = [];
+    refrescarBotonesFiltroGlobal();
+    renderCurrentTab();
   });
 }
-document.getElementById('reset-btn').addEventListener('click', ()=>{
-  state.empresas = []; state.meses = []; state.anios = []; renderFlujos();
-});
+initFiltroGlobal();
+
+// Se llama cada vez que algo pudo haber cambiado el filtro desde fuera de los dropdowns
+// (p.ej. al hacer clic en una gráfica que salta a Movimientos con una empresa/mes concretos).
+function refrescarBotonesFiltroGlobal(){
+  if(filtroGlobalAnio) filtroGlobalAnio.actualizarBoton();
+  if(filtroGlobalMes) filtroGlobalMes.actualizarBoton();
+  if(filtroGlobalEmpresa) filtroGlobalEmpresa.actualizarBoton();
+}
 
 // ===================== KPI ROW =====================
 function empresasReportandoEnMes(mes){
@@ -2220,7 +2267,7 @@ function clasificarTipoER(tipo){
   return liveClasificacionER[tipo] || CLASIFICACION_TIPO_ER[tipo] || 'GASTOS';
 }
 
-const erState = { empresa: '', modo: 'mensual' }; // empresa: '' = Holding (todas)
+const erState = { modo: 'mensual' };
 
 function calcularLineasER(rows){
   const ingreso = sumBy(rows, 'INGRESO');
@@ -2239,24 +2286,9 @@ function calcularLineasER(rows){
   return { ingreso, costos, utilidadBruta, gastos, utilidadOperativa, impuestos, utilidadNeta, inversion, resultadoFinal };
 }
 
-function renderERChips(){
-  const cont = document.getElementById('er-empresa-chips');
-  const empresas = getEmpresas();
-  const chips = ['<button class="chip teal '+(erState.empresa===''?'active':'')+'" data-emp="">Holding (todas)</button>']
-    .concat(empresas.map(e => `<button class="chip teal ${erState.empresa===e?'active':''}" data-emp="${e}">${e}</button>`));
-  cont.innerHTML = chips.join('');
-  cont.querySelectorAll('button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      erState.empresa = btn.dataset.emp;
-      renderEstadoResultados();
-    });
-  });
-}
-
 function renderEstadoResultados(){
-  renderERChips();
   const table = document.getElementById('er-table');
-  const baseRows = getAllData().filter(d => !erState.empresa || d.empresa === erState.empresa);
+  const baseRows = getAllData().filter(d => empresaEnFiltro(d.empresa));
   const periodos = getPeriodosOrdenados(baseRows);
 
   if(periodos.length === 0){
@@ -3053,7 +3085,6 @@ initPieToggles();
 
 function renderFlujos(){
   renderMastheadMeta();
-  renderFilterBar();
   renderPieCharts();
   renderKPIs();
   renderOperativoVsInversion();
@@ -3093,8 +3124,6 @@ function renderFlujoEfectivo(){
 // ROA aquí se trata como utilidad anualizada / costo del activo, igual que ROI ya que no
 // tenemos depreciación ni otros activos no operativos que distingan ROA de ROI en este modelo.
 
-const activosState = { empresa: null };
-
 function getActivos(){ return liveActivosData; }
 function getActivosEmpresas(){ return [...new Set(getActivos().map(a=>a.empresa))]; }
 
@@ -3108,7 +3137,7 @@ const activosPagoState = { vista: 'pendientes' };
 // Solo se evalúa cuando ambos datos existen — si no hay Cantidad pagada capturada todavía, el
 // activo no entra en ninguna de las dos vistas (ni pagado ni pendiente), para no inventar info.
 function getActivosConEstadoDePago(){
-  const activos = activosState.empresa ? getActivos().filter(a=>a.empresa===activosState.empresa) : getActivos();
+  const activos = getActivos().filter(a => empresaEnFiltro(a.empresa));
   return activos
     .filter(a => a.cantidad_pagada > 0 && a.costo > 0)
     .map(a => {
@@ -3294,26 +3323,7 @@ function getActivosConMetricas(){
 }
 
 function getActivosFiltrados(){
-  return getActivosConMetricas().filter(a => !activosState.empresa || a.empresa === activosState.empresa);
-}
-
-// ===================== RENDER: FILTER CHIPS =====================
-function renderActivosFilterBar(){
-  const EMPRESAS = getActivosEmpresas();
-  const wrap = document.getElementById('activos-chips-empresa');
-  if(!wrap) return;
-  wrap.innerHTML = EMPRESAS.map((e,i) => {
-    const isActive = activosState.empresa === e;
-    const style = isActive ? ` style="background:${colorFor(e,i)}; border-color:${colorFor(e,i)}; color:#ffffff;"` : '';
-    return `<button class="chip ${isActive?'active':''}" data-empresa="${e}"${style}>${e}</button>`;
-  }).join('');
-  wrap.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const v = btn.dataset.empresa;
-      activosState.empresa = activosState.empresa === v ? null : v;
-      renderActivos();
-    });
-  });
+  return getActivosConMetricas().filter(a => empresaEnFiltro(a.empresa));
 }
 
 // ===================== RENDER: KPI SUMMARY =====================
@@ -3409,7 +3419,7 @@ function renderFlujoPorActivo(){
   const table = document.getElementById('flujo-activo-table');
   if(!table) return;
 
-  const activos = activosState.empresa ? getActivos().filter(a=>a.empresa===activosState.empresa) : getActivos();
+  const activos = getActivos().filter(a => empresaEnFiltro(a.empresa));
   const conectados = activos
     .map(a => ({
       ...a,
@@ -3466,10 +3476,10 @@ function renderActivosVinculados(){
   if(!table) return;
 
   let rows = getAllData().filter(r => r.activo && r.activo.trim() !== '');
-  if(activosState.empresa) rows = rows.filter(r => r.empresa === activosState.empresa);
+  rows = rows.filter(r => empresaEnFiltro(r.empresa));
 
   if(rows.length === 0){
-    table.innerHTML = `<tr><td class="capture-log-empty">Todavía no hay movimientos con la columna "Activo" llenada${activosState.empresa ? ' para ' + activosState.empresa : ''}.</td></tr>`;
+    table.innerHTML = `<tr><td class="capture-log-empty">Todavía no hay movimientos con la columna "Activo" llenada${state.empresas.length ? ' para ' + state.empresas.join(', ') : ''}.</td></tr>`;
     return;
   }
 
@@ -3575,7 +3585,7 @@ function renderActivosTipoChart(){
       onClick: (evt, elements) => {
         if(!elements.length) return;
         const categoria = entries[elements[0].index][0];
-        goToMovimientosFiltrado({ empresa: activosState.empresa || '', categoria, tipoMov: 'EGRESO', mes: state.meses });
+        goToMovimientosFiltrado({ categoria, tipoMov: 'EGRESO', mes: state.meses });
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
@@ -3614,33 +3624,12 @@ function calcularDosLecturas(empresa){
   return { empresa, ingOp, egrOp, utilOperativa, ingInv, egrInv, netoInversion, utilTotal };
 }
 
-const financiamientoState = { empresas: [] };
-
-function renderFinanciamientoChips(){
-  const wrap = document.getElementById('financiamiento-chips-empresa');
-  if(!wrap) return;
-  const EMPRESAS = getEmpresas();
-  wrap.innerHTML = EMPRESAS.map((e,i) => {
-    const isActive = financiamientoState.empresas.includes(e);
-    const style = isActive ? ` style="background:${colorFor(e,i)}; border-color:${colorFor(e,i)}; color:#ffffff;"` : '';
-    return `<button class="chip ${isActive?'active':''}" data-empresa="${e}"${style}>${e}</button>`;
-  }).join('');
-  wrap.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const v = btn.dataset.empresa;
-      const idx = financiamientoState.empresas.indexOf(v);
-      if(idx === -1) financiamientoState.empresas.push(v); else financiamientoState.empresas.splice(idx,1);
-      renderFinanciamientoChips();
-      renderFinanciamiento();
-    });
-  });
-}
-
 function renderFinanciamiento(){
   const table = document.getElementById('financiamiento-table');
   if(!table) return;
 
-  const empresas = financiamientoState.empresas.length ? financiamientoState.empresas : getEmpresas();
+  const EMPRESAS = getEmpresas();
+  const empresas = state.empresas.length ? state.empresas.filter(e=>EMPRESAS.includes(e)) : EMPRESAS;
   const lecturas = empresas.map(calcularDosLecturas).filter(l => l.ingOp || l.egrOp || l.ingInv || l.egrInv);
 
   if(lecturas.length === 0){
@@ -3712,7 +3701,6 @@ function renderFinanciamiento(){
 // La TABLA siempre muestra el detalle completo (utilidad del mes + flujo acumulado + resultado).
 // El TOGGLE solo cambia qué muestra la GRÁFICA: "Solo utilidad del mes" vs "+ Flujo acumulado".
 const coberturaState = { modo: 'mes' };
-const coberturaFiltro = { empresas: [], meses: [] }; // [] = todas/todos
 let chartCobertura = null;
 let ultimaCoberturaFilas = [];
 
@@ -3767,7 +3755,11 @@ function calcularCoberturaHistorica(empresa){
     if(activosDelMes.length === 0) return;
 
     let disponibleUtilidad = utilidadPorPeriodo[idx];
-    let disponibleFlujo = flujoAcumuladoPorPeriodo[idx];
+    // OJO: se usa el flujo acumulado de ANTES de que empezara este mes (el arrastre), no el
+    // de fin de este mismo mes — si usáramos el de fin de mes, ya le habría restado los propios
+    // gastos de este mes (incluido, tal vez, el pago de este mismo activo), y estaríamos
+    // preguntando circularmente "¿me alcanzó el dinero para esto?" después de ya haberlo gastado.
+    let disponibleFlujo = idx > 0 ? flujoAcumuladoPorPeriodo[idx-1] : ancla.monto;
 
     activosDelMes.forEach(a => {
       const pago = a.pago_recurrente;
@@ -3797,58 +3789,18 @@ function calcularCoberturaHistorica(empresa){
   return filas;
 }
 
-function renderCoberturaFiltros(){
-  const empresasCont = document.getElementById('cobertura-chips-empresa');
-  const mesesCont = document.getElementById('cobertura-chips-mes');
-  if(!empresasCont || !mesesCont) return;
-
-  const EMPRESAS = getEmpresas();
-  empresasCont.innerHTML = EMPRESAS.map(e =>
-    `<button class="chip teal ${coberturaFiltro.empresas.includes(e)?'active':''}" data-empresa="${e}">${e}</button>`
-  ).join('');
-  empresasCont.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const v = btn.dataset.empresa;
-      const idx = coberturaFiltro.empresas.indexOf(v);
-      if(idx === -1) coberturaFiltro.empresas.push(v); else coberturaFiltro.empresas.splice(idx,1);
-      renderCoberturaActivos();
-    });
-  });
-
-  // Solo se listan meses que de verdad aparecen en el historial de las empresas visibles.
-  const EMPRESAS_TODAS = getEmpresas();
-  const empresasVisibles = coberturaFiltro.empresas.length ? coberturaFiltro.empresas : EMPRESAS_TODAS;
-  const rowsVisibles = getAllData().filter(r => empresasVisibles.includes(r.empresa));
-  const mesesConDatos = MESES_ORDEN.filter(m => rowsVisibles.some(r => r.mes === m));
-  mesesCont.innerHTML = mesesConDatos.map(m =>
-    `<button class="chip teal ${coberturaFiltro.meses.includes(m)?'active':''}" data-mes="${m}">${m.slice(0,3)}</button>`
-  ).join('');
-  mesesCont.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const v = btn.dataset.mes;
-      const idx = coberturaFiltro.meses.indexOf(v);
-      if(idx === -1) coberturaFiltro.meses.push(v); else coberturaFiltro.meses.splice(idx,1);
-      renderCoberturaActivos();
-    });
-  });
-}
-
 function renderCoberturaActivos(){
   const EMPRESAS = getEmpresas();
-  const empresasBase = activosState.empresa ? [activosState.empresa] : EMPRESAS;
-  const empresas = coberturaFiltro.empresas.length
-    ? empresasBase.filter(e => coberturaFiltro.empresas.includes(e))
-    : empresasBase;
+  const empresas = state.empresas.length ? state.empresas.filter(e=>EMPRESAS.includes(e)) : EMPRESAS;
 
   let filas = [];
   empresas.forEach(emp => { filas = filas.concat(calcularCoberturaHistorica(emp)); });
-  if(coberturaFiltro.meses.length) filas = filas.filter(f => coberturaFiltro.meses.includes(f.mes));
+  if(state.meses.length) filas = filas.filter(f => state.meses.includes(f.mes));
 
   // Más reciente primero dentro de cada empresa.
   filas.sort((a,b) => (a.empresa < b.empresa ? -1 : a.empresa > b.empresa ? 1 : (b.anio - a.anio) || (b.idxPeriodo - a.idxPeriodo)));
 
   ultimaCoberturaFilas = filas;
-  renderCoberturaFiltros();
   renderCoberturaTabla(filas);
   renderCoberturaChart(filas);
 }
@@ -3952,7 +3904,6 @@ initCoberturaToggle();
 
 // ===================== MASTER RENDER (Activos) =====================
 function renderActivos(){
-  renderActivosFilterBar();
   renderActivosPendientes();
   renderActivosKPIs();
   renderActivosTable();
@@ -3960,7 +3911,6 @@ function renderActivos(){
   renderActivosVinculados();
   renderActivosRoiChart();
   renderActivosTipoChart();
-  renderFinanciamientoChips();
   renderFinanciamiento();
   renderCoberturaActivos();
 }
@@ -3970,8 +3920,6 @@ function renderActivos(){
 // ===================== MOVIMIENTOS TAB =====================
 const movsState = {
   search: '',
-  empresa: '',
-  meses: [],
   tipoMov: '',
   categoria: '',
   activo: '',
@@ -3986,8 +3934,9 @@ function movsFilteredRows(){
   const all = getAllData();
   const q = movsState.search.trim().toLowerCase();
   let rows = all.filter(r=>{
-    if(movsState.empresa && r.empresa !== movsState.empresa) return false;
-    if(movsState.meses.length && !movsState.meses.includes(r.mes)) return false;
+    if(!empresaEnFiltro(r.empresa)) return false;
+    if(state.meses.length && !state.meses.includes(r.mes)) return false;
+    if(state.anios.length && !state.anios.includes(getAnioDeFila(r))) return false;
     if(movsState.tipoMov && r.tipo_mov !== movsState.tipoMov) return false;
     if(movsState.categoria && r.categoria !== movsState.categoria) return false;
     if(movsState.activo && r.activo !== movsState.activo) return false;
@@ -4020,34 +3969,6 @@ function movsFilteredRows(){
 
 function populateMovsFilters(){
   const all = getAllData();
-  const selEmpresa = document.getElementById('movs-filtro-empresa');
-  const mesPanel = document.getElementById('movs-mes-panel');
-  if(!selEmpresa || !mesPanel) return;
-
-  const empresas = [...new Set(all.map(r=>r.empresa))].sort();
-  const currentEmpresa = movsState.empresa;
-  selEmpresa.innerHTML = '<option value="">Todas las empresas</option>' +
-    empresas.map(e=>`<option value="${e}" ${e===currentEmpresa?'selected':''}>${e}</option>`).join('');
-
-  const mesesConDatos = MESES_ORDEN.filter(m=>all.some(r=>r.mes===m));
-  mesPanel.innerHTML = mesesConDatos.map(m =>
-    `<button class="chip teal ${movsState.meses.includes(m)?'active':''}" data-mes="${m}">${m.slice(0,3)}</button>`
-  ).join('');
-  mesPanel.querySelectorAll('.chip').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      const v = btn.dataset.mes;
-      const idx = movsState.meses.indexOf(v);
-      if(idx === -1) movsState.meses.push(v); else movsState.meses.splice(idx,1);
-      btn.classList.toggle('active');
-      updateMovsMesToggleLabel();
-      movsState.page = 1;
-      renderMovsTable();
-      renderMovsActiveFilterBanner();
-    });
-  });
-  updateMovsMesToggleLabel();
-
   const selCategoria = document.getElementById('movs-filtro-categoria');
   if(selCategoria){
     const categorias = [...new Set(all.map(r=>r.categoria))].sort();
@@ -4065,21 +3986,10 @@ function populateMovsFilters(){
   }
 }
 
-function updateMovsMesToggleLabel(){
-  const toggle = document.getElementById('movs-mes-toggle');
-  if(!toggle) return;
-  if(movsState.meses.length === 0) toggle.textContent = 'Todos los meses ▾';
-  else if(movsState.meses.length === 1) toggle.textContent = `${movsState.meses[0]} ▾`;
-  else toggle.textContent = `${movsState.meses.length} meses ▾`;
-}
-
 function renderMovsActiveFilterBanner(){
   const box = document.getElementById('movs-active-filter');
   if(!box) return;
   const parts = [];
-  if(movsState.empresa) parts.push(`empresa <b>${movsState.empresa}</b>`);
-  if(movsState.meses.length === 1) parts.push(`mes <b>${movsState.meses[0]}</b>`);
-  else if(movsState.meses.length > 1) parts.push(`meses <b>${movsState.meses.join(', ')}</b>`);
   if(movsState.categoria) parts.push(`línea <b>${movsState.categoria}</b>`);
   if(movsState.activo) parts.push(`activo <b>${movsState.activo}</b>`);
   if(movsState.tipoMov) parts.push(`solo <b>${movsState.tipoMov === 'INGRESO' ? 'ingresos' : 'egresos'}</b>`);
@@ -4091,9 +4001,9 @@ function renderMovsActiveFilterBanner(){
     return;
   }
   box.style.display = 'flex';
-  box.innerHTML = `Viendo movimientos filtrados por ${parts.join(', ')}. <button id="movs-clear-active">✕ Quitar filtro</button>`;
+  box.innerHTML = `Viendo movimientos filtrados por ${parts.join(', ')} (además del filtro de Año/Mes/Empresa de arriba). <button id="movs-clear-active">✕ Quitar filtro</button>`;
   document.getElementById('movs-clear-active').addEventListener('click', ()=>{
-    movsState.empresa = ''; movsState.categoria = ''; movsState.tipoMov = ''; movsState.search = ''; movsState.meses = []; movsState.activo = ''; movsState.soloOperativo = false;
+    movsState.categoria = ''; movsState.tipoMov = ''; movsState.search = ''; movsState.activo = ''; movsState.soloOperativo = false;
     movsState.page = 1;
     populateMovsFilters();
     document.getElementById('movs-search').value = '';
@@ -4155,9 +4065,6 @@ function renderMovimientos(){
 
 function initMovimientosTab(){
   const search = document.getElementById('movs-search');
-  const selEmpresa = document.getElementById('movs-filtro-empresa');
-  const mesToggle = document.getElementById('movs-mes-toggle');
-  const mesPanel = document.getElementById('movs-mes-panel');
   const selCategoria = document.getElementById('movs-filtro-categoria');
   const selActivo = document.getElementById('movs-filtro-activo');
   const selTipo = document.getElementById('movs-filtro-tipomov');
@@ -4171,23 +4078,6 @@ function initMovimientosTab(){
     movsState.page = 1;
     renderMovsTable();
   });
-  selEmpresa.addEventListener('change', ()=>{
-    movsState.empresa = selEmpresa.value;
-    movsState.page = 1;
-    renderMovsTable();
-    renderMovsActiveFilterBanner();
-  });
-  if(mesToggle && mesPanel){
-    mesToggle.addEventListener('click', (e)=>{
-      e.stopPropagation();
-      mesPanel.style.display = mesPanel.style.display === 'none' ? 'flex' : 'none';
-    });
-    document.addEventListener('click', (e)=>{
-      if(!mesPanel.contains(e.target) && e.target !== mesToggle){
-        mesPanel.style.display = 'none';
-      }
-    });
-  }
   selCategoria.addEventListener('change', ()=>{
     movsState.categoria = selCategoria.value;
     movsState.page = 1;
@@ -4264,6 +4154,7 @@ async function runSync(showLoading){
 
 let currentTab = 'flujos';
 function renderCurrentTab(){
+  refrescarBotonesFiltroGlobal();
   if(currentTab === 'flujos') renderFlujos();
   else if(currentTab === 'activos') renderActivos();
   else if(currentTab === 'movimientos') renderMovimientos();
@@ -4289,17 +4180,15 @@ function initTabs(){
 // filtrada por la empresa/categoría/tipo de movimiento en la que se hizo clic.
 function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, activo, soloOperativo }){
   movsState.search = '';
-  movsState.empresa = empresa || '';
   movsState.categoria = categoria || '';
   movsState.tipoMov = tipoMov || '';
-  // 'mes' puede llegar como un string (un mes puntual, p.ej. el punto exacto que se clickeó en
-  // una gráfica de tendencia) o como un array (cuando la gráfica no tiene un mes propio y debe
-  // heredar los mismos meses que ya están filtrados arriba, en state.meses).
-  if(Array.isArray(mes)) movsState.meses = [...mes];
-  else movsState.meses = mes ? [mes] : [];
   movsState.activo = activo || '';
   movsState.soloOperativo = !!soloOperativo;
   movsState.page = 1;
+  // El filtro de empresa/mes ahora es el global de arriba de la página — se ajusta directo,
+  // así queda igual en las 5 pestañas, no solo en Movimientos.
+  if(empresa) state.empresas = [empresa];
+  if(mes) state.meses = Array.isArray(mes) ? [...mes] : [mes];
   switchToTab('movimientos');
 }
 
