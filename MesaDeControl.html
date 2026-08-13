@@ -508,8 +508,12 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
           <div class="section-eyebrow">Comparación vertical</div>
           <div class="section-title">Evolución mensual</div>
         </div>
-        <div class="section-note">Ingreso, egreso y utilidad mes contra mes.</div>
+        <div class="view-toggle" id="evolucion-vista-toggle">
+          <button class="active" data-modo="er">Estado de Resultados</button>
+          <button data-modo="fe">Flujo de Efectivo</button>
+        </div>
       </div>
+      <div class="section-note" style="text-align:left; max-width:none;">Ingreso, egreso y utilidad mes contra mes — cambia entre ver cada mes aislado (Estado de Resultados) o acumulado (Flujo de Efectivo).</div>
       <div class="panel">
         <canvas id="chart-evolucion" height="90"></canvas>
       </div>
@@ -1119,6 +1123,19 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 
   <!-- ESTADO DE RESULTADOS -->
   <div class="tab-panel" id="tab-estado-resultados" style="display:none;">
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Comparación vertical</div>
+          <div class="section-title">Evolución mensual</div>
+        </div>
+      </div>
+      <div class="section-note" style="text-align:left; max-width:none;">Ingreso, egreso y utilidad de cada mes por separado (sin acumular).</div>
+      <div class="panel">
+        <canvas id="chart-evolucion-er" height="90"></canvas>
+      </div>
+    </section>
+
     <section class="section">
       <div class="section-head">
         <div>
@@ -1852,7 +1869,7 @@ function renderOperativoVsInversion(){
 }
 
 // ===================== EVOLUTION CHART =====================
-let chartEvolucion, chartEmpresas;
+let chartEmpresas;
 // Genera variaciones de tonalidad (más claro/más oscuro) sobre un color base, para distinguir
 // categorías dentro de la misma familia de color (todas las de ingreso en verde, todas las de
 // egreso en rojo), en vez de usar colores completamente distintos entre sí.
@@ -1886,7 +1903,12 @@ function colorConOpacidad(color, opacidad){
   return hexConOpacidad(color, opacidad);
 }
 
-function renderEvolucion(){
+const _chartsEvolucion = {}; // registro de instancias por canvasId (para reutilizar la misma gráfica en 3 pestañas)
+function renderEvolucion(canvasId){
+  canvasId = canvasId || 'chart-evolucion';
+  const ctx = document.getElementById(canvasId);
+  if(!ctx) return;
+
   // Siempre recorre TODOS los meses disponibles (la gráfica es la tendencia completa), filtrando
   // solo por empresa. Si el usuario tiene uno o varios meses seleccionados en el filtro general
   // de arriba, esos meses se resaltan visualmente (el resto se atenúa) en vez de ocultar el resto.
@@ -1901,18 +1923,26 @@ function renderEvolucion(){
   const tonosIngreso = tonalidadesDe('#00875f', categoriasIngreso.length);
   const tonosEgreso = tonalidadesDe('#e0203c', categoriasEgreso.length);
 
-  const datasetsIngreso = categoriasIngreso.map((cat,i) => ({
-    type:'bar', label: displayCategoria(cat), stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
-    data: meses.map(m => baseRows.filter(r=>r.mes===m && r.tipo_mov==='INGRESO' && r.categoria===cat).reduce((a,r)=>a+r.monto,0)),
-    borderColor: tonosIngreso[i], borderWidth:0, order:2,
-    backgroundColor: meses.map(m => hexConOpacidad(tonosIngreso[i], opacidadDe(m))),
-  }));
-  const datasetsEgreso = categoriasEgreso.map((cat,i) => ({
-    type:'bar', label: displayCategoria(cat), stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
-    data: meses.map(m => baseRows.filter(r=>r.mes===m && r.tipo_mov==='EGRESO' && r.categoria===cat).reduce((a,r)=>a+r.monto,0)),
-    borderColor: tonosEgreso[i], borderWidth:0, order:2,
-    backgroundColor: meses.map(m => hexConOpacidad(tonosEgreso[i], opacidadDe(m))),
-  }));
+  const datasetsIngreso = categoriasIngreso.map((cat,i) => {
+    const filas = meses.map(m => baseRows.filter(r=>r.mes===m && r.tipo_mov==='INGRESO' && r.categoria===cat));
+    return {
+      type:'bar', label: displayCategoria(cat), stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
+      _counts: filas.map(f=>f.length),
+      data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+      borderColor: tonosIngreso[i], borderWidth:0, order:2,
+      backgroundColor: meses.map(m => hexConOpacidad(tonosIngreso[i], opacidadDe(m))),
+    };
+  });
+  const datasetsEgreso = categoriasEgreso.map((cat,i) => {
+    const filas = meses.map(m => baseRows.filter(r=>r.mes===m && r.tipo_mov==='EGRESO' && r.categoria===cat));
+    return {
+      type:'bar', label: displayCategoria(cat), stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
+      _counts: filas.map(f=>f.length),
+      data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+      borderColor: tonosEgreso[i], borderWidth:0, order:2,
+      backgroundColor: meses.map(m => hexConOpacidad(tonosEgreso[i], opacidadDe(m))),
+    };
+  });
   // La utilidad se dibuja sobre el eje secundario para que no se vea aplastada por las barras apiladas.
   const utilidad = meses.map(m => sumBy(baseRows.filter(r=>r.mes===m),'INGRESO') - sumBy(baseRows.filter(r=>r.mes===m),'EGRESO'));
   const datasetUtilidad = {
@@ -1921,16 +1951,15 @@ function renderEvolucion(){
     pointBackgroundColor:'#cc4e0a', order:1, yAxisID:'y',
   };
 
-  const ctx = document.getElementById('chart-evolucion');
-  if(chartEvolucion) chartEvolucion.destroy();
-  chartEvolucion = new Chart(ctx, {
+  if(_chartsEvolucion[canvasId]) _chartsEvolucion[canvasId].destroy();
+  const chart = new Chart(ctx, {
     data: { labels: meses, datasets: [...datasetsIngreso, ...datasetsEgreso, datasetUtilidad] },
     options: {
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
       onClick: (evt, elements) => {
         if(!elements.length) return;
-        const ds = chartEvolucion.data.datasets[elements[0].datasetIndex];
+        const ds = chart.data.datasets[elements[0].datasetIndex];
         if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica un único tipo de movimiento
         const mes = meses[elements[0].index];
         goToMovimientosFiltrado({
@@ -1945,17 +1974,19 @@ function renderEvolucion(){
       },
       plugins:{
         legend:{ display:false },
-        tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:8,
+        tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:9,
           callbacks:{
-            // Solo el nombre de la línea de negocio al hacer hover — el monto y desglose completo
-            // se ven dando clic (te lleva a Movimientos), no aquí.
             title: (items)=>{
               const ds = items[0].dataset;
               return ds._tipoMov ? ds.label : 'Utilidad';
             },
             label: (ctx)=>{
               if(!ctx.dataset._tipoMov) return `${fmtMoney(ctx.parsed.y)}`;
-              return 'Clic para ver el detalle en Movimientos';
+              const n = ctx.dataset._counts ? ctx.dataset._counts[ctx.dataIndex] : null;
+              const tipoTxt = ctx.dataset._tipoMov === 'INGRESO' ? 'Ingreso' : 'Egreso';
+              const lineas = [`${tipoTxt}: ${fmtMoney(ctx.parsed.y)}`];
+              if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'} · clic para ver el detalle`);
+              return lineas;
             }
           } }
       },
@@ -1965,19 +1996,20 @@ function renderEvolucion(){
       }
     }
   });
+  _chartsEvolucion[canvasId] = chart;
 }
 
 // ===================== EVOLUCIÓN ACUMULADA (Flujo de Efectivo) =====================
 // Misma idea que "Evolución mensual", pero cada barra/punto es el acumulado hasta ese mes
 // (no el mes aislado). Usa el orden cronológico real (año+mes), no solo el nombre del mes.
-let chartEvolucionAcum = null;
 // Cada mes muestra su actividad REAL (sin acumular por categoría) más un bloque nuevo que
 // carga todo lo acumulado hasta el mes anterior: si va en positivo se agrega como Ingreso
 // "Utilidades (arrastre)"; si va en negativo, como Egreso "Pérdidas (arrastre)". Así el
 // acumulado total de cada mes queda representado como si esas ganancias/pérdidas pasadas
 // fueran parte de la actividad de ese mes, no como una línea aparte por fuera.
-function renderEvolucionAcumulada(){
-  const ctx = document.getElementById('chart-evolucion-acum');
+function renderEvolucionAcumulada(canvasId){
+  canvasId = canvasId || 'chart-evolucion-acum';
+  const ctx = document.getElementById(canvasId);
   if(!ctx) return;
 
   const baseRows = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
@@ -2005,33 +2037,31 @@ function renderEvolucionAcumulada(){
   const tonosEgreso = tonalidadesDe('#e0203c', categoriasEgreso.length + 1);
 
   const datasetsIngreso = categoriasIngreso.map((cat,i) => {
-    const data = periodos.map(p => {
-      const rowsP = baseRows.filter(r => r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat);
-      return rowsP.reduce((a,r)=>a+r.monto,0);
-    });
+    const filas = periodos.map(p => baseRows.filter(r => r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
     return {
       type:'bar', label: displayCategoria(cat), stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
-      data, borderColor: tonosIngreso[i], borderWidth:0, order:2, backgroundColor: tonosIngreso[i],
+      _counts: filas.map(f=>f.length),
+      data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+      borderColor: tonosIngreso[i], borderWidth:0, order:2, backgroundColor: tonosIngreso[i],
     };
   });
   const datasetUtilidadesArrastre = {
-    type:'bar', label:'Utilidades (arrastre)', stack:'ingreso', _tipoMov:'INGRESO',
+    type:'bar', label:'Utilidades (arrastre)', stack:'ingreso', _esArrastre:true,
     data: arrastrePorPeriodo.map(v => Math.max(0, v)),
     borderColor: tonosIngreso[categoriasIngreso.length], borderWidth:0, order:2, backgroundColor: tonosIngreso[categoriasIngreso.length],
   };
 
   const datasetsEgreso = categoriasEgreso.map((cat,i) => {
-    const data = periodos.map(p => {
-      const rowsP = baseRows.filter(r => r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat);
-      return rowsP.reduce((a,r)=>a+r.monto,0);
-    });
+    const filas = periodos.map(p => baseRows.filter(r => r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
     return {
       type:'bar', label: displayCategoria(cat), stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
-      data, borderColor: tonosEgreso[i], borderWidth:0, order:2, backgroundColor: tonosEgreso[i],
+      _counts: filas.map(f=>f.length),
+      data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
+      borderColor: tonosEgreso[i], borderWidth:0, order:2, backgroundColor: tonosEgreso[i],
     };
   });
   const datasetPerdidasArrastre = {
-    type:'bar', label:'Pérdidas (arrastre)', stack:'egreso', _tipoMov:'EGRESO',
+    type:'bar', label:'Pérdidas (arrastre)', stack:'egreso', _esArrastre:true,
     data: arrastrePorPeriodo.map(v => Math.max(0, -v)),
     borderColor: tonosEgreso[categoriasEgreso.length], borderWidth:0, order:2, backgroundColor: tonosEgreso[categoriasEgreso.length],
   };
@@ -2044,20 +2074,43 @@ function renderEvolucionAcumulada(){
     pointRadius:3, pointBackgroundColor:'#cc4e0a', order:1, yAxisID:'y',
   };
 
-  if(chartEvolucionAcum) chartEvolucionAcum.destroy();
+  if(_chartsEvolucion[canvasId]) _chartsEvolucion[canvasId].destroy();
   if(periodos.length === 0) return;
 
-  chartEvolucionAcum = new Chart(ctx, {
+  const chart = new Chart(ctx, {
     data: { labels, datasets: [...datasetsIngreso, datasetUtilidadesArrastre, ...datasetsEgreso, datasetPerdidasArrastre, datasetUtilidad] },
     options: {
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
+      onClick: (evt, elements) => {
+        if(!elements.length) return;
+        const ds = chart.data.datasets[elements[0].datasetIndex];
+        if(!ds._tipoMov || ds._esArrastre) return; // línea de Utilidad o bloques de arrastre: no hay un único mes/tipo al que saltar
+        const periodo = periodos[elements[0].index];
+        goToMovimientosFiltrado({
+          empresa: state.empresas.length === 1 ? state.empresas[0] : '',
+          categoria: ds._categoria,
+          tipoMov: ds._tipoMov,
+          mes: periodo.mes,
+        });
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = (elements.length && !chart.data.datasets[elements[0].datasetIndex]._esArrastre) ? 'pointer' : 'default';
+      },
       plugins:{
         legend:{ display:false },
-        tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:8,
+        tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:9,
           callbacks:{
             title: (items)=>{ const ds = items[0].dataset; return ds._tipoMov ? ds.label : 'Utilidad acumulada'; },
-            label: (ctx)=> `${fmtMoney(ctx.parsed.y)}`,
+            label: (ctx)=>{
+              if(!ctx.dataset._tipoMov) return `${fmtMoney(ctx.parsed.y)}`;
+              const monto = `${ctx.dataset._tipoMov === 'INGRESO' ? 'Ingreso' : 'Egreso'}: ${fmtMoney(ctx.parsed.y)}`;
+              if(ctx.dataset._esArrastre) return [monto, 'Acumulado de meses anteriores'];
+              const n = ctx.dataset._counts ? ctx.dataset._counts[ctx.dataIndex] : null;
+              const lineas = [monto];
+              if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'} · clic para ver el detalle`);
+              return lineas;
+            },
           } }
       },
       scales:{
@@ -2066,6 +2119,7 @@ function renderEvolucionAcumulada(){
       }
     }
   });
+  _chartsEvolucion[canvasId] = chart;
 }
 
 // ===================== UTILIDAD ACUMULADA (corrido mes contra mes) =====================
@@ -2315,6 +2369,7 @@ function calcularLineasER(rows){
 }
 
 function renderEstadoResultados(){
+  renderEvolucion('chart-evolucion-er');
   const table = document.getElementById('er-table');
   const baseRows = excluirActivosSiAplica(getAllData()).filter(d => empresaEnFiltro(d.empresa));
   const periodos = getPeriodosOrdenados(baseRows);
@@ -3111,12 +3166,27 @@ function initPieToggles(){
 }
 initPieToggles();
 
+// ===================== TOGGLE: EVOLUCIÓN (General) — Edo. Resultados vs Flujo de Efectivo =====================
+const evolucionGeneralState = { modo: 'er' };
+function renderEvolucionGeneral(){
+  if(evolucionGeneralState.modo === 'er') renderEvolucion('chart-evolucion');
+  else renderEvolucionAcumulada('chart-evolucion');
+}
+document.querySelectorAll('#evolucion-vista-toggle button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#evolucion-vista-toggle button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    evolucionGeneralState.modo = btn.dataset.modo;
+    renderEvolucionGeneral();
+  });
+});
+
 function renderFlujos(){
   renderMastheadMeta();
   renderPieCharts();
   renderKPIs();
   renderOperativoVsInversion();
-  renderEvolucion();
+  renderEvolucionGeneral();
   renderTendenciaCategoria();
   renderEmpresasChart();
   renderResumenEmpresas();
