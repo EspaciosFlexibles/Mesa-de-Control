@@ -231,6 +231,7 @@ body{
 
 .grid-2{ display:grid; grid-template-columns: 1.3fr 1fr; gap:14px; }
 .grid-2-even{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; }
+.grid-2-even-balanced .panel{ display:flex; flex-direction:column; justify-content:center; }
 .grid-3{ display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; }
 
 canvas{ max-width:100%; }
@@ -348,7 +349,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 /* ===== TOP PIE CHARTS ===== */
 .pie-card-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
 .pie-card-title{ font-family: var(--serif); font-size: 16px; font-weight:600; color: var(--paper); }
-.pie-canvas-wrap{ position:relative; height:260px; }
+.pie-canvas-wrap{ position:relative; height:325px; }
 .pie-canvas-wrap canvas{ cursor:pointer; }
 .pie-empty{ display:none; font-family:var(--sans); font-size:13px; color:var(--paper-faint); text-align:center; padding:60px 0; }
 
@@ -560,18 +561,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     </div>
     <div class="kpi-row" id="kpi-row"></div>
 
-    <!-- OPERATIVO VS INVERSION -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Negocio vs. capital</div>
-          <div class="section-title">Utilidad operativa vs. movimiento de inversión</div>
-        </div>
-        <div class="section-note">Separa el desempeño normal del negocio de las inversiones de capital del grupo (terrenos, bodegas, locales...), según la clasificación que mantienes en la hoja Activos.</div>
-      </div>
-      <div class="grid-2-even" id="op-inv-grid"></div>
-    </section>
-
     <!-- TENDENCIA POR LINEA DE NEGOCIO -->
     <section class="section">
       <div class="section-head">
@@ -699,6 +688,18 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         <div class="section-note">Participación de cada línea de negocio dentro del ingreso total de la unidad.</div>
       </div>
       <div class="grid-3" id="composition-grid"></div>
+    </section>
+
+    <!-- OPERATIVO VS INVERSION -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Negocio vs. capital</div>
+          <div class="section-title">Utilidad operativa vs. movimiento de inversión</div>
+        </div>
+        <div class="section-note">Separa el desempeño normal del negocio de las inversiones de capital del grupo (terrenos, bodegas, locales...), según la clasificación que mantienes en la hoja Activos.</div>
+      </div>
+      <div class="grid-2-even grid-2-even-balanced" id="op-inv-grid"></div>
     </section>
 
   </div>
@@ -1555,13 +1556,13 @@ function clasificacionDe(tipo){
 function esInversion(row){ return clasificacionDe(row.categoria) === 'INVERSION'; }
 
 const COLORS = {
-  Padel: '#00b368',
-  Ruslan: '#0066ff',
-  Matma: '#8b2fd6',
-  Tekwa: '#ff6a00',
-  Movilidad: '#e8112d',
+  Padel: '#2f7d5c',
+  Ruslan: '#3b5f96',
+  Matma: '#7a5a94',
+  Tekwa: '#b8703a',
+  Movilidad: '#a8455a',
 };
-const COLOR_FALLBACK = ['#00b368','#0066ff','#8b2fd6','#ff6a00','#e8112d','#d4a300'];
+const COLOR_FALLBACK = ['#2f7d5c','#3b5f96','#7a5a94','#b8703a','#a8455a','#a8862f'];
 function colorFor(name, idx){ return COLORS[name] || COLOR_FALLBACK[idx % COLOR_FALLBACK.length]; }
 
 const state = {
@@ -1712,8 +1713,8 @@ function refrescarBotonesFiltroGlobal(){
 }
 
 // ===================== KPI ROW =====================
-function empresasReportandoEnMes(mes){
-  return new Set(getAllData().filter(r=>r.mes===mes).map(r=>r.empresa));
+function empresasReportandoEnMes(mes, anio){
+  return new Set(getAllData().filter(r=>r.mes===mes && (!anio || getAnioDeFila(r)===anio)).map(r=>r.empresa));
 }
 
 const kpiCompareState = { modo: 'mes' };
@@ -1739,42 +1740,73 @@ function renderKPIs(){
   const utilidad = ingreso - egreso;
   const margen = ingreso !== 0 ? (utilidad/ingreso*100) : 0;
 
-  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
-  const mesesPresentes = MESES_ORDEN.filter(m => baseRows.some(r=>r.mes===m));
+  // baseRows respeta el filtro de empresa Y de año — de aquí sale el "periodo actual" y la
+  // comparación "vs mes anterior" (que debe quedarse dentro del mismo año seleccionado).
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
+    (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
+    (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+  );
+  const periodos = getPeriodosOrdenados(baseRows);
 
-  // Determina cuál es el "mes actual" de referencia: si el usuario eligió exactamente un mes,
-  // se usa ese; si no eligió ninguno (o varios), se usa el último mes con datos disponibles.
-  let mesActual = null;
-  if(state.meses.length === 1) mesActual = state.meses[0];
-  else if(state.meses.length === 0 && mesesPresentes.length) mesActual = mesesPresentes[mesesPresentes.length-1];
+  // Para "vs mismo mes año anterior" se necesita ver TODOS los años (sin el filtro de año) —
+  // si no, nunca habría un "año anterior" disponible al tener un solo año seleccionado.
+  const baseRowsTodosAnios = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
+
+  // Determina cuál es el "periodo actual" de referencia (año+mes real, no solo el nombre): si
+  // el usuario eligió exactamente un mes, se usa el más reciente con ese nombre. Si no eligió
+  // ninguno: con una sola empresa filtrada, se usa el último periodo con datos de ESA empresa;
+  // con varias (o ninguna, es decir "todas"), se usa el último periodo en que TODAS las
+  // empresas relevantes ya tienen movimientos capturados — para no comparar contra un mes con
+  // captura todavía incompleta.
+  let periodoActual = null;
+  if(state.meses.length === 1){
+    const candidatos = periodos.filter(p => p.mes === state.meses[0]);
+    periodoActual = candidatos.length ? candidatos[candidatos.length-1] : null;
+  } else if(state.meses.length === 0 && periodos.length){
+    if(state.empresas.length === 1){
+      periodoActual = periodos[periodos.length-1];
+    } else {
+      const empresasRelevantes = state.empresas.length ? state.empresas : getEmpresas();
+      for(let i = periodos.length - 1; i >= 0; i--){
+        const p = periodos[i];
+        const reportando = empresasReportandoEnMes(p.mes, p.anio);
+        if(empresasRelevantes.every(e => reportando.has(e))){ periodoActual = p; break; }
+      }
+      if(!periodoActual) periodoActual = periodos[periodos.length-1]; // respaldo si nunca hay cobertura completa
+    }
+  }
 
   let deltaIngreso = null, deltaEgreso = null, deltaUtilidad = null, deltaMargen = null;
   let coberturaIncompleta = false, etiquetaComparativo = '', sinDatoAnioAnterior = false;
 
-  if(mesActual){
-    let mesComparar = null;
+  if(periodoActual){
+    let periodoComparar = null;
+    let rowsFuenteComparativo = baseRows;
     if(kpiCompareState.modo === 'mes'){
-      const idx = mesesPresentes.indexOf(mesActual);
-      mesComparar = idx > 0 ? mesesPresentes[idx-1] : null;
+      const idx = periodos.findIndex(p => p.mes===periodoActual.mes && p.anio===periodoActual.anio);
+      periodoComparar = idx > 0 ? periodos[idx-1] : null;
       etiquetaComparativo = 'vs. mes anterior';
     } else {
-      // "Mismo mes, año anterior": como hoy todo el historial vive en un único año (ver nota
-      // del selector de Año), todavía no existe un mes de un año distinto para comparar.
-      mesComparar = null;
-      sinDatoAnioAnterior = true;
+      // "Mismo mes, año anterior" — usa el histórico completo (sin el filtro de Año), porque
+      // si no, el año anterior nunca aparecería al tener un solo año seleccionado.
+      const anioAnteriorNum = (parseInt(periodoActual.anio,10) - 1).toString();
+      const todosPeriodos = getPeriodosOrdenados(baseRowsTodosAnios);
+      periodoComparar = todosPeriodos.find(p => p.mes === periodoActual.mes && p.anio === anioAnteriorNum) || null;
+      sinDatoAnioAnterior = !periodoComparar;
+      rowsFuenteComparativo = baseRowsTodosAnios;
       etiquetaComparativo = 'vs. mismo mes año anterior';
     }
 
-    if(mesComparar){
+    if(periodoComparar){
       if(state.empresas.length === 0){
-        const empActual = empresasReportandoEnMes(mesActual);
-        const empPrev = empresasReportandoEnMes(mesComparar);
+        const empActual = empresasReportandoEnMes(periodoActual.mes, periodoActual.anio);
+        const empPrev = empresasReportandoEnMes(periodoComparar.mes, periodoComparar.anio);
         if(empActual.size !== empPrev.size || [...empPrev].some(e=>!empActual.has(e))){
           coberturaIncompleta = true;
         }
       }
-      const actualRows = baseRows.filter(r=>r.mes===mesActual);
-      const compRows = baseRows.filter(r=>r.mes===mesComparar);
+      const actualRows = rowsFuenteComparativo.filter(r=>r.mes===periodoActual.mes && getAnioDeFila(r)===periodoActual.anio);
+      const compRows = rowsFuenteComparativo.filter(r=>r.mes===periodoComparar.mes && getAnioDeFila(r)===periodoComparar.anio);
       const li = sumBy(actualRows,'INGRESO'), le = sumBy(actualRows,'EGRESO');
       const pi = sumBy(compRows,'INGRESO'), pe = sumBy(compRows,'EGRESO');
       const lu = li-le, pu = pi-pe;
@@ -1909,11 +1941,17 @@ function renderEvolucion(canvasId){
   const ctx = document.getElementById(canvasId);
   if(!ctx) return;
 
-  // Siempre recorre TODOS los meses disponibles (la gráfica es la tendencia completa), filtrando
-  // solo por empresa. Si el usuario tiene uno o varios meses seleccionados en el filtro general
-  // de arriba, esos meses se resaltan visualmente (el resto se atenúa) en vez de ocultar el resto.
-  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
-  const meses = MESES_ORDEN.filter(m=>baseRows.some(r=>r.mes===m));
+  // Filtra por empresa Y por año (si elegiste alguno). Si el usuario tiene uno o varios meses
+  // seleccionados en el filtro general de arriba, esos meses se resaltan visualmente (el resto
+  // se atenúa) en vez de ocultar el resto — pero el año sí filtra de verdad, no solo resalta.
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
+    (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
+    (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+  );
+  // Periodos reales (año+mes) en orden cronológico — así, si hay varios años, Enero 2025 y
+  // Enero 2026 aparecen como barras separadas en su lugar correcto, no mezcladas en una sola.
+  const periodos = getPeriodosOrdenados(baseRows);
+  const labels = periodos.map(labelPeriodo);
   const mesesResaltados = state.meses.length ? state.meses : null;
   const opacidadDe = (mes) => (mesesResaltados && !mesesResaltados.includes(mes)) ? 0.28 : 1;
 
@@ -1924,36 +1962,39 @@ function renderEvolucion(canvasId){
   const tonosEgreso = tonalidadesDe('#e0203c', categoriasEgreso.length);
 
   const datasetsIngreso = categoriasIngreso.map((cat,i) => {
-    const filas = meses.map(m => baseRows.filter(r=>r.mes===m && r.tipo_mov==='INGRESO' && r.categoria===cat));
+    const filas = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='INGRESO' && r.categoria===cat));
     return {
       type:'bar', label: displayCategoria(cat), stack:'ingreso', _tipoMov:'INGRESO', _categoria: cat,
       _counts: filas.map(f=>f.length),
       data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
       borderColor: tonosIngreso[i], borderWidth:0, order:2,
-      backgroundColor: meses.map(m => hexConOpacidad(tonosIngreso[i], opacidadDe(m))),
+      backgroundColor: periodos.map(p => hexConOpacidad(tonosIngreso[i], opacidadDe(p.mes))),
     };
   });
   const datasetsEgreso = categoriasEgreso.map((cat,i) => {
-    const filas = meses.map(m => baseRows.filter(r=>r.mes===m && r.tipo_mov==='EGRESO' && r.categoria===cat));
+    const filas = periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.tipo_mov==='EGRESO' && r.categoria===cat));
     return {
       type:'bar', label: displayCategoria(cat), stack:'egreso', _tipoMov:'EGRESO', _categoria: cat,
       _counts: filas.map(f=>f.length),
       data: filas.map(f=>f.reduce((a,r)=>a+r.monto,0)),
       borderColor: tonosEgreso[i], borderWidth:0, order:2,
-      backgroundColor: meses.map(m => hexConOpacidad(tonosEgreso[i], opacidadDe(m))),
+      backgroundColor: periodos.map(p => hexConOpacidad(tonosEgreso[i], opacidadDe(p.mes))),
     };
   });
   // La utilidad se dibuja sobre el eje secundario para que no se vea aplastada por las barras apiladas.
-  const utilidad = meses.map(m => sumBy(baseRows.filter(r=>r.mes===m),'INGRESO') - sumBy(baseRows.filter(r=>r.mes===m),'EGRESO'));
+  const utilidad = periodos.map(p => {
+    const rowsP = baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio);
+    return sumBy(rowsP,'INGRESO') - sumBy(rowsP,'EGRESO');
+  });
   const datasetUtilidad = {
     type:'line', label:'Utilidad', data: utilidad, borderColor:'#cc4e0a', backgroundColor:'#cc4e0a', tension:0.3, borderWidth:2.5,
-    pointRadius: meses.map(m => mesesResaltados ? (mesesResaltados.includes(m) ? 5 : 2) : 3),
+    pointRadius: periodos.map(p => mesesResaltados ? (mesesResaltados.includes(p.mes) ? 5 : 2) : 3),
     pointBackgroundColor:'#cc4e0a', order:1, yAxisID:'y',
   };
 
   if(_chartsEvolucion[canvasId]) _chartsEvolucion[canvasId].destroy();
   const chart = new Chart(ctx, {
-    data: { labels: meses, datasets: [...datasetsIngreso, ...datasetsEgreso, datasetUtilidad] },
+    data: { labels, datasets: [...datasetsIngreso, ...datasetsEgreso, datasetUtilidad] },
     options: {
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
@@ -1961,12 +2002,13 @@ function renderEvolucion(canvasId){
         if(!elements.length) return;
         const ds = chart.data.datasets[elements[0].datasetIndex];
         if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica un único tipo de movimiento
-        const mes = meses[elements[0].index];
+        const periodo = periodos[elements[0].index];
         goToMovimientosFiltrado({
           empresa: state.empresas.length === 1 ? state.empresas[0] : '',
           categoria: ds._categoria,
           tipoMov: ds._tipoMov,
-          mes,
+          mes: periodo.mes,
+          anio: periodo.anio,
         });
       },
       onHover: (evt, elements) => {
@@ -2077,8 +2119,12 @@ function renderEvolucionAcumulada(canvasId){
   if(_chartsEvolucion[canvasId]) _chartsEvolucion[canvasId].destroy();
   if(periodos.length === 0) return;
 
+  const vista = filtrarPeriodosPorAnioDisplay(periodos, labels, [...datasetsIngreso, datasetUtilidadesArrastre, ...datasetsEgreso, datasetPerdidasArrastre, datasetUtilidad]);
+  if(vista.periodos.length === 0) return;
+  const periodosVista = vista.periodos;
+
   const chart = new Chart(ctx, {
-    data: { labels, datasets: [...datasetsIngreso, datasetUtilidadesArrastre, ...datasetsEgreso, datasetPerdidasArrastre, datasetUtilidad] },
+    data: { labels: vista.labels, datasets: vista.datasetsConData },
     options: {
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
@@ -2086,12 +2132,13 @@ function renderEvolucionAcumulada(canvasId){
         if(!elements.length) return;
         const ds = chart.data.datasets[elements[0].datasetIndex];
         if(!ds._tipoMov || ds._esArrastre) return; // línea de Utilidad o bloques de arrastre: no hay un único mes/tipo al que saltar
-        const periodo = periodos[elements[0].index];
+        const periodo = periodosVista[elements[0].index];
         goToMovimientosFiltrado({
           empresa: state.empresas.length === 1 ? state.empresas[0] : '',
           categoria: ds._categoria,
           tipoMov: ds._tipoMov,
           mes: periodo.mes,
+          anio: periodo.anio,
         });
       },
       onHover: (evt, elements) => {
@@ -2254,6 +2301,20 @@ function escaparHtmlSimple(s){
   return d.innerHTML;
 }
 
+// Para gráficas que ACUMULAN (Flujo de Efectivo): el cálculo siempre necesita TODO el
+// histórico disponible (si no, el acumulado arrancaría mal desde el año filtrado). Esta
+// función filtra solo lo que se MUESTRA al final, después de ya haber calculado el acumulado
+// real con todos los datos.
+function filtrarPeriodosPorAnioDisplay(periodos, labels, datasetsConData){
+  if(state.anios.length === 0) return { periodos, labels, datasetsConData };
+  const mask = periodos.map(p => state.anios.includes(p.anio));
+  return {
+    periodos: periodos.filter((_,i)=>mask[i]),
+    labels: labels.filter((_,i)=>mask[i]),
+    datasetsConData: datasetsConData.map(ds => ({ ...ds, data: ds.data.filter((_,i)=>mask[i]) })),
+  };
+}
+
 function renderAcumulado(){
   const ctx = document.getElementById('chart-acumulado');
   if(!ctx) return;
@@ -2291,9 +2352,12 @@ function renderAcumulado(){
   if(chartAcumulado) chartAcumulado.destroy();
   if(periodos.length === 0) return;
 
+  const vista = filtrarPeriodosPorAnioDisplay(periodos, labels, datasets);
+  if(vista.periodos.length === 0) return;
+
   chartAcumulado = new Chart(ctx, {
     type:'line',
-    data:{ labels, datasets },
+    data:{ labels: vista.labels, datasets: vista.datasetsConData },
     options:{
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
@@ -2371,7 +2435,9 @@ function calcularLineasER(rows){
 function renderEstadoResultados(){
   renderEvolucion('chart-evolucion-er');
   const table = document.getElementById('er-table');
-  const baseRows = excluirActivosSiAplica(getAllData()).filter(d => empresaEnFiltro(d.empresa));
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d =>
+    empresaEnFiltro(d.empresa) && (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+  );
   const periodos = getPeriodosOrdenados(baseRows);
 
   if(periodos.length === 0){
@@ -2444,7 +2510,8 @@ function renderTendenciaCategoria(){
     (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d))) &&
     d.tipo_mov === tendenciaState.tipoMov
   );
-  const meses = MESES_ORDEN.filter(m => baseRows.some(r=>r.mes===m));
+  const periodos = getPeriodosOrdenados(baseRows);
+  const labels = periodos.map(labelPeriodo);
   const categorias = [...new Set(baseRows.map(r=>r.categoria))];
   const mesesResaltados = state.meses.length ? state.meses : null;
 
@@ -2453,33 +2520,34 @@ function renderTendenciaCategoria(){
     const colorBase = catColorMap[cat] || CATEGORIA_PALETTE[i % CATEGORIA_PALETTE.length];
     return {
       label: cat,
-      data: meses.map(m => baseRows.filter(r=>r.mes===m && r.categoria===cat).reduce((a,r)=>a+r.monto,0)),
+      data: periodos.map(p => baseRows.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio && r.categoria===cat).reduce((a,r)=>a+r.monto,0)),
       borderColor: colorBase,
       backgroundColor: colorBase,
       borderWidth: 2, tension: 0.3, fill: false,
-      pointRadius: meses.map(m => mesesResaltados ? (mesesResaltados.includes(m) ? 5 : 2) : 3),
-      pointBackgroundColor: meses.map(m => mesesResaltados && !mesesResaltados.includes(m) ? colorConOpacidad(colorBase, 0.35) : colorBase),
+      pointRadius: periodos.map(p => mesesResaltados ? (mesesResaltados.includes(p.mes) ? 5 : 2) : 3),
+      pointBackgroundColor: periodos.map(p => mesesResaltados && !mesesResaltados.includes(p.mes) ? colorConOpacidad(colorBase, 0.35) : colorBase),
     };
   });
 
   if(chartTendenciaCategoria) chartTendenciaCategoria.destroy();
-  if(meses.length === 0 || categorias.length === 0) return;
+  if(periodos.length === 0 || categorias.length === 0) return;
 
   chartTendenciaCategoria = new Chart(ctx, {
     type:'line',
-    data:{ labels: meses, datasets },
+    data:{ labels, datasets },
     options:{
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
       onClick: (evt, elements) => {
         if(!elements.length) return;
         const ds = chartTendenciaCategoria.data.datasets[elements[0].datasetIndex];
-        const mes = meses[elements[0].index];
+        const periodo = periodos[elements[0].index];
         goToMovimientosFiltrado({
           empresa: state.empresas.length === 1 ? state.empresas[0] : '',
           categoria: ds.label,
           tipoMov: tendenciaState.tipoMov,
-          mes,
+          mes: periodo.mes,
+          anio: periodo.anio,
         });
       },
       onHover: (evt, elements) => {
@@ -2581,7 +2649,10 @@ function renderEmpresasChartCore(canvasId, rankId, chartKey){
   if(!canvas) return;
   const EMPRESAS = getEmpresas();
   const empresasToShow = state.empresas.length ? state.empresas : EMPRESAS;
-  const rowsScope = excluirActivosSiAplica(getAllData()).filter(d => state.meses.length === 0 || state.meses.includes(d.mes));
+  const rowsScope = excluirActivosSiAplica(getAllData()).filter(d =>
+    (state.meses.length === 0 || state.meses.includes(d.mes)) &&
+    (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+  );
   const data = empresasToShow.map(e=>{
     const rows = rowsScope.filter(r=>r.empresa===e);
     const ing = sumBy(rows,'INGRESO');
@@ -2842,13 +2913,13 @@ function crearPivotInstancia(sufijo){
     if(pivotState.periodo === 'acumulado'){
       table.innerHTML = tablaParaFilas(rowsBase, null);
     } else {
-      const mesesDisponibles = MESES_ORDEN.filter(m => rowsBase.some(r=>r.mes===m));
-      const meses = pivotState.meses.length ? mesesDisponibles.filter(m=>pivotState.meses.includes(m)) : mesesDisponibles;
+      const periodosDisponibles = getPeriodosOrdenados(rowsBase);
+      const periodosAMostrar = pivotState.meses.length ? periodosDisponibles.filter(p=>pivotState.meses.includes(p.mes)) : periodosDisponibles;
       let html = '';
-      meses.forEach(mes=>{
-        const mesRows = rowsBase.filter(r=>r.mes===mes);
+      periodosAMostrar.forEach(p=>{
+        const mesRows = rowsBase.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio);
         if(mesRows.length === 0) return;
-        html += tablaParaFilas(mesRows, mes);
+        html += tablaParaFilas(mesRows, labelPeriodo(p));
       });
       if(!html) html = '<tr><td class="capture-log-empty">Selecciona al menos un mes con datos.</td></tr>';
       table.innerHTML = html;
@@ -2875,16 +2946,18 @@ function renderVariacion(){
   const empresas = state.empresas.length ? state.empresas : EMPRESAS;
   let html = '';
   empresas.forEach(emp=>{
-    const empRows = excluirActivosSiAplica(getAllData()).filter(r=>r.empresa===emp);
-    const mesesPresentes = MESES_ORDEN.filter(m=>empRows.some(r=>r.mes===m));
-    if(mesesPresentes.length < 2){
+    const empRows = excluirActivosSiAplica(getAllData()).filter(r=>
+      r.empresa===emp && (state.anios.length === 0 || state.anios.includes(getAnioDeFila(r)))
+    );
+    const periodos = getPeriodosOrdenados(empRows);
+    if(periodos.length < 2){
       html += `<tr><td>${emp}</td><td colspan="4" style="text-align:center; color:var(--paper-faint);">Historial insuficiente para comparar</td></tr>`;
       return;
     }
-    const last = mesesPresentes[mesesPresentes.length-1];
-    const prev = mesesPresentes[mesesPresentes.length-2];
-    const prevRows = empRows.filter(r=>r.mes===prev);
-    const lastRows = empRows.filter(r=>r.mes===last);
+    const last = periodos[periodos.length-1];
+    const prev = periodos[periodos.length-2];
+    const prevRows = empRows.filter(r=>r.mes===prev.mes && getAnioDeFila(r)===prev.anio);
+    const lastRows = empRows.filter(r=>r.mes===last.mes && getAnioDeFila(r)===last.anio);
     const prevUtil = sumBy(prevRows,'INGRESO') - sumBy(prevRows,'EGRESO');
     const lastUtil = sumBy(lastRows,'INGRESO') - sumBy(lastRows,'EGRESO');
     const diff = lastUtil - prevUtil;
@@ -2906,8 +2979,8 @@ function renderVariacion(){
 
     html += `<tr>
       <td>${emp}</td>
-      <td>${prev}: ${fmtMoney(prevUtil)}</td>
-      <td>${last}: ${fmtMoney(lastUtil)}</td>
+      <td>${labelPeriodo(prev)}: ${fmtMoney(prevUtil)}</td>
+      <td>${labelPeriodo(last)}: ${fmtMoney(lastUtil)}</td>
       <td class="${cls}">${diff>=0?'+':''}${fmtMoney(diff)}</td>
       <td class="${cls}">${pctLabel}</td>
     </tr>`;
@@ -2966,7 +3039,11 @@ function renderCompositionInto(gridId, prefijo){
   `).join('');
 
   empresas.forEach((e,idx)=>{
-    const rows = excluirActivosSiAplica(getAllData()).filter(r=>r.empresa===e && r.tipo_mov==='INGRESO' && (state.meses.length === 0 || state.meses.includes(r.mes)));
+    const rows = excluirActivosSiAplica(getAllData()).filter(r=>
+      r.empresa===e && r.tipo_mov==='INGRESO' &&
+      (state.meses.length === 0 || state.meses.includes(r.mes)) &&
+      (state.anios.length === 0 || state.anios.includes(getAnioDeFila(r)))
+    );
     const map = {};
     rows.forEach(r=>{ map[r.categoria] = (map[r.categoria]||0) + r.monto; });
     const entries = Object.entries(map).sort((a,b)=>b[1]-a[1]);
@@ -3011,7 +3088,7 @@ function renderComposition(){
 function renderMastheadMeta(){
   const all = getAllData();
   document.getElementById('meta-empresas').textContent = getEmpresas().length;
-  document.getElementById('meta-meses').textContent = MESES_ORDEN.filter(m=>all.some(r=>r.mes===m)).length;
+  document.getElementById('meta-meses').textContent = getPeriodosOrdenados(all).length;
   document.getElementById('meta-movs').textContent = all.length;
 }
 
@@ -3020,7 +3097,7 @@ const pieState = { ingresoModo: 'empresa', egresoModo: 'empresa' };
 let chartPieIngreso = null, chartPieEgreso = null;
 
 // Paleta amplia y sin repeticiones para subtipos (categorías de línea de negocio).
-const CATEGORIA_PALETTE = ['#0066ff','#00b368','#ff6a00','#8b2fd6','#e8112d','#00b8d9','#d4a300','#ff3d8a','#6b4cff','#2e8b57','#c2410c','#0891b2'];
+const CATEGORIA_PALETTE = ['#2f5fa8','#2f8f5b','#c2691f','#6b4c8a','#a8394a','#2f8fa3','#a8862f','#b8447a','#5c4ca8','#3d7a5c','#a05426','#2f7a94'];
 
 // Mapa global: una categoría (subtipo) siempre recibe el mismo color, sin importar si
 // aparece en el pie de ingresos o en el de egresos.
@@ -3070,7 +3147,7 @@ function renderPieChart(canvasId, tipoMov, modo, existingChart){
       responsive:true,
       maintainAspectRatio: false,
       plugins:{
-        legend:{ position:'right', labels:{ color:'#15151a', font:{family:'Inter', size:11.5}, boxWidth:11, padding:9 } },
+        legend:{ position:'right', maxWidth: 140, labels:{ color:'#15151a', font:{family:'Inter', size:11.5}, boxWidth:11, padding:9 } },
         tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:10,
           callbacks:{ label:(ctx)=>{
             const v = ctx.parsed;
@@ -4276,17 +4353,18 @@ function initTabs(){
 
 // Llamado desde los pie charts de Flujos: lleva a la pestaña Movimientos ya
 // filtrada por la empresa/categoría/tipo de movimiento en la que se hizo clic.
-function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, activo, soloOperativo }){
+function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, anio, activo, soloOperativo }){
   movsState.search = '';
   movsState.categoria = categoria || '';
   movsState.tipoMov = tipoMov || '';
   movsState.activo = activo || '';
   movsState.soloOperativo = !!soloOperativo;
   movsState.page = 1;
-  // El filtro de empresa/mes ahora es el global de arriba de la página — se ajusta directo,
+  // El filtro de empresa/mes/año ahora es el global de arriba de la página — se ajusta directo,
   // así queda igual en las 5 pestañas, no solo en Movimientos.
   if(empresa) state.empresas = [empresa];
   if(mes) state.meses = Array.isArray(mes) ? [...mes] : [mes];
+  if(anio) state.anios = [anio];
   switchToTab('movimientos');
 }
 
