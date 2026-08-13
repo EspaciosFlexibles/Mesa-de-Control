@@ -206,6 +206,7 @@ body{
 .kpi.k-utilidad::before{ background: var(--copper-bright); }
 .kpi.k-margen::before{ background: var(--gold); }
 .kpi-label{ font-family: var(--mono); font-size: 10.5px; letter-spacing:0.1em; text-transform:uppercase; color: var(--paper-faint); margin-bottom:10px; }
+.kpi-ref-mes{ font-family: var(--sans); font-size: 10px; letter-spacing:normal; text-transform:none; color: rgba(90,90,102,0.55); font-weight:400; }
 .kpi-value{ font-family: var(--serif); font-size: 30px; font-weight:600; letter-spacing:-0.01em; color: var(--paper); }
 .kpi-value.neg{ color: var(--rose); }
 .kpi-delta{ font-family: var(--mono); font-size: 11.5px; margin-top:8px; display:flex; align-items:center; gap:5px; }
@@ -350,6 +351,8 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 .pie-card-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
 .pie-card-title{ font-family: var(--serif); font-size: 16px; font-weight:600; color: var(--paper); }
 .pie-canvas-wrap{ position:relative; height:325px; }
+.pie-grid .panel{ height:420px; display:flex; flex-direction:column; box-sizing:border-box; overflow:hidden; }
+.pie-grid .pie-canvas-wrap{ flex:1 1 auto; height:auto; min-height:0; }
 .pie-canvas-wrap canvas{ cursor:pointer; }
 .pie-empty{ display:none; font-family:var(--sans); font-size:13px; color:var(--paper-faint); text-align:center; padding:60px 0; }
 
@@ -522,7 +525,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 
     <!-- TOP PIE CHARTS -->
     <section class="section">
-      <div class="grid-2-even">
+      <div class="grid-2-even pie-grid">
         <div class="panel">
           <div class="pie-card-head">
             <div class="pie-card-title">Composición de ingresos</div>
@@ -742,7 +745,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 
     <!-- TOP PIE CHARTS -->
     <section class="section">
-      <div class="grid-2-even">
+      <div class="grid-2-even pie-grid">
         <div class="panel">
           <div class="pie-card-head">
             <div class="pie-card-title">Composición de ingresos</div>
@@ -1831,24 +1834,27 @@ function renderKPIs(){
     ? `<div style="grid-column:1/-1; font-family:var(--mono); font-size:11px; color:var(--gold); background:rgba(92,138,0,0.07); border:1px solid rgba(92,138,0,0.25); border-radius:4px; padding:8px 14px; margin-top:-2px;">⚠ El mes comparado no tiene registros de todas las empresas todavía — la variación puede verse artificialmente más baja por falta de captura, no por desempeño real.</div>`
     : '';
 
+  const refMesTxt = periodoActual ? (periodoActual.mes + ' ' + periodoActual.anio) : '';
+  const refMesHtml = refMesTxt ? `<span class="kpi-ref-mes">${refMesTxt}</span>` : '';
+
   document.getElementById('kpi-row').innerHTML = `
     <div class="kpi k-ingreso">
-      <div class="kpi-label">Ingreso total</div>
+      <div class="kpi-label">Ingreso total ${refMesHtml}</div>
       <div class="kpi-value">${fmtMoney(ingreso)}</div>
       ${deltaHtml(deltaIngreso, etiquetaComparativo)}
     </div>
     <div class="kpi k-egreso">
-      <div class="kpi-label">Egreso total</div>
+      <div class="kpi-label">Egreso total ${refMesHtml}</div>
       <div class="kpi-value">${fmtMoney(egreso)}</div>
       ${deltaHtml(deltaEgreso, etiquetaComparativo, true)}
     </div>
     <div class="kpi k-utilidad">
-      <div class="kpi-label">Utilidad (Ingreso − Egreso)</div>
+      <div class="kpi-label">Utilidad (Ingreso − Egreso) ${refMesHtml}</div>
       <div class="kpi-value ${utilidad<0?'neg':''}">${fmtMoney(utilidad)}</div>
       ${deltaHtml(deltaUtilidad, etiquetaComparativo)}
     </div>
     <div class="kpi k-margen">
-      <div class="kpi-label">Margen sobre ingreso</div>
+      <div class="kpi-label">Margen sobre ingreso ${refMesHtml}</div>
       <div class="kpi-value ${margen<0?'neg':''}">${margen.toFixed(1)}%</div>
       ${deltaHtml(deltaMargen, etiquetaComparativo.replace('vs.', 'pts vs.'))}
     </div>
