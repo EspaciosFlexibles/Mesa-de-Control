@@ -467,11 +467,11 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="flujos">Flujos</button>
-    <button class="tab-btn" data-tab="activos">Activos · ROI / ROA</button>
-    <button class="tab-btn" data-tab="movimientos">Movimientos</button>
+    <button class="tab-btn active" data-tab="flujos">General</button>
     <button class="tab-btn" data-tab="estado-resultados">Estado de Resultados</button>
     <button class="tab-btn" data-tab="flujo-efectivo">Flujo de Efectivo</button>
+    <button class="tab-btn" data-tab="activos">Activos · ROI / ROA</button>
+    <button class="tab-btn" data-tab="movimientos">Movimientos</button>
   </div>
 
   <!-- FILTRO GLOBAL — fijo arriba de las 5 pestañas, gobierna todo el panel -->
@@ -490,6 +490,10 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <div class="msdrop" id="msdrop-empresa">
       <button class="msdrop-btn" type="button" id="msdrop-btn-empresa">Todas ▾</button>
       <div class="msdrop-panel" id="msdrop-panel-empresa"></div>
+    </div>
+    <div class="view-toggle" id="modo-activos-toggle" style="margin-left:4px;" title="No afecta la pestaña Activos — ahí siempre ves todo.">
+      <button class="active" data-modo="todo">Todo (con activos)</button>
+      <button data-modo="sin">Sin activos</button>
     </div>
     <button class="reset-btn" id="reset-btn">↺ LIMPIAR FILTROS</button>
   </div>
@@ -1547,6 +1551,7 @@ const state = {
   empresas: [], // [] = todas
   meses: [],    // [] = todos
   anios: [],    // [] = todos
+  modoActivos: 'todo', // 'todo' = incluye ingresos/egresos de activos | 'sin' = los excluye
 };
 
 // true si esa empresa debe mostrarse con el filtro global actual (vacío = todas).
@@ -1586,6 +1591,19 @@ function getFiltered(){
     if(state.anios.length && !state.anios.includes(getAnioDeFila(d))) return false;
     return true;
   });
+}
+
+// Quita las filas ligadas a activos/inmuebles (según la misma clasificación "Inversión" de tu
+// hoja Activos) cuando el toggle está en "Sin activos". No toca la pestaña Activos (esa sigue
+// usando getAllData()/getFiltered() directo), ni la sección "Negocio vs Capital" en Flujos
+// (esa necesita ver ambos lados siempre, es justo su propósito).
+function excluirActivosSiAplica(rows){
+  return state.modoActivos === 'sin' ? rows.filter(r => !esInversion(r)) : rows;
+}
+// Igual que getFiltered(), pero respeta el toggle de arriba — úsalo en vez de getFiltered()
+// en todo lo que SÍ deba cambiar entre "Todo" y "Sin activos".
+function getFilteredOperativo(){
+  return excluirActivosSiAplica(getFiltered());
 }
 
 function sumBy(rows, tipo){
@@ -1650,8 +1668,18 @@ function initFiltroGlobal(){
     () => MESES_ORDEN.filter(m => getAllData().some(r=>r.mes===m)));
   filtroGlobalEmpresa = crearFiltroGlobalDropdown('empresas', 'msdrop-btn-empresa', 'msdrop-panel-empresa', getEmpresas);
 
+  document.querySelectorAll('#modo-activos-toggle button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#modo-activos-toggle button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state.modoActivos = btn.dataset.modo;
+      renderCurrentTab();
+    });
+  });
+
   document.getElementById('reset-btn').addEventListener('click', ()=>{
-    state.empresas = []; state.meses = []; state.anios = [];
+    state.empresas = []; state.meses = []; state.anios = []; state.modoActivos = 'todo';
+    document.querySelectorAll('#modo-activos-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.modo==='todo'));
     refrescarBotonesFiltroGlobal();
     renderCurrentTab();
   });
@@ -1688,13 +1716,13 @@ function initKpiCompareToggle(){
 initKpiCompareToggle();
 
 function renderKPIs(){
-  const rows = getFiltered();
+  const rows = getFilteredOperativo();
   const ingreso = sumBy(rows,'INGRESO');
   const egreso = sumBy(rows,'EGRESO');
   const utilidad = ingreso - egreso;
   const margen = ingreso !== 0 ? (utilidad/ingreso*100) : 0;
 
-  const baseRows = getAllData().filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
   const mesesPresentes = MESES_ORDEN.filter(m => baseRows.some(r=>r.mes===m));
 
   // Determina cuál es el "mes actual" de referencia: si el usuario eligió exactamente un mes,
@@ -1862,7 +1890,7 @@ function renderEvolucion(){
   // Siempre recorre TODOS los meses disponibles (la gráfica es la tendencia completa), filtrando
   // solo por empresa. Si el usuario tiene uno o varios meses seleccionados en el filtro general
   // de arriba, esos meses se resaltan visualmente (el resto se atenúa) en vez de ocultar el resto.
-  const baseRows = getAllData().filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
   const meses = MESES_ORDEN.filter(m=>baseRows.some(r=>r.mes===m));
   const mesesResaltados = state.meses.length ? state.meses : null;
   const opacidadDe = (mes) => (mesesResaltados && !mesesResaltados.includes(mes)) ? 0.28 : 1;
@@ -1952,7 +1980,7 @@ function renderEvolucionAcumulada(){
   const ctx = document.getElementById('chart-evolucion-acum');
   if(!ctx) return;
 
-  const baseRows = getAllData().filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=> state.empresas.length === 0 || state.empresas.includes(d.empresa));
   const periodos = getPeriodosOrdenados(baseRows);
   const labels = periodos.map(labelPeriodo);
 
@@ -2176,7 +2204,7 @@ function renderAcumulado(){
   const ctx = document.getElementById('chart-acumulado');
   if(!ctx) return;
 
-  const baseRows = getAllData().filter(d => state.empresas.length === 0 || state.empresas.includes(d.empresa));
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d => state.empresas.length === 0 || state.empresas.includes(d.empresa));
   const periodos = getPeriodosOrdenados(baseRows);
   const labels = periodos.map(labelPeriodo);
 
@@ -2288,7 +2316,7 @@ function calcularLineasER(rows){
 
 function renderEstadoResultados(){
   const table = document.getElementById('er-table');
-  const baseRows = getAllData().filter(d => empresaEnFiltro(d.empresa));
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d => empresaEnFiltro(d.empresa));
   const periodos = getPeriodosOrdenados(baseRows);
 
   if(periodos.length === 0){
@@ -2356,7 +2384,7 @@ function renderTendenciaCategoria(){
   // uno o varios meses seleccionados en el filtro general de arriba, esos meses se resaltan con
   // puntos más grandes en la línea (el resto se atenúa) en vez de ocultar el resto — mismo
   // comportamiento que ya usa "Evolución mensual".
-  const baseRows = getAllData().filter(d=>
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
     (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
     (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d))) &&
     d.tipo_mov === tendenciaState.tipoMov
@@ -2434,7 +2462,7 @@ function renderTendenciaAcumulada(){
   const ctx = document.getElementById('chart-tendencia-categoria-acum');
   if(!ctx) return;
 
-  const baseRows = getAllData().filter(d=>
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
     (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
     (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d))) &&
     d.tipo_mov === tendenciaAcumState.tipoMov
@@ -2498,7 +2526,7 @@ function renderEmpresasChartCore(canvasId, rankId, chartKey){
   if(!canvas) return;
   const EMPRESAS = getEmpresas();
   const empresasToShow = state.empresas.length ? state.empresas : EMPRESAS;
-  const rowsScope = getAllData().filter(d => state.meses.length === 0 || state.meses.includes(d.mes));
+  const rowsScope = excluirActivosSiAplica(getAllData()).filter(d => state.meses.length === 0 || state.meses.includes(d.mes));
   const data = empresasToShow.map(e=>{
     const rows = rowsScope.filter(r=>r.empresa===e);
     const ing = sumBy(rows,'INGRESO');
@@ -2572,7 +2600,7 @@ function displayCategoria(t){
 
 // ===================== RESUMEN POR EMPRESA (Ingreso total / Egreso por tipo / Neto) =====================
 function renderResumenEmpresas(){
-  const rows = getFiltered();
+  const rows = getFilteredOperativo();
   const table = document.getElementById('table-resumen-empresas');
   const tableFE = document.getElementById('table-resumen-empresas-fe');
   const EMPRESAS = (state.empresas.length ? state.empresas : getEmpresas()).filter(emp => rows.some(r=>r.empresa===emp));
@@ -2670,7 +2698,7 @@ function crearPivotInstancia(sufijo){
     wrap.style.display = pivotState.periodo === 'mensual' ? 'flex' : 'none';
     if(pivotState.periodo !== 'mensual') return;
 
-    const rows = getFiltered();
+    const rows = getFilteredOperativo();
     const mesesConDatos = MESES_ORDEN.filter(m => rows.some(r=>r.mes===m));
     wrap.innerHTML = mesesConDatos.map(m =>
       `<button class="chip teal ${pivotState.meses.includes(m)?'active':''}" data-mes="${m}">${m.slice(0,3)}</button>`
@@ -2687,7 +2715,7 @@ function crearPivotInstancia(sufijo){
   }
 
   function renderPivot(){
-    const rowsBase = getFiltered();
+    const rowsBase = getFilteredOperativo();
     const EMPRESAS = getEmpresas();
     const table = document.getElementById('pivot-table' + sufijo);
     if(!table) return;
@@ -2792,7 +2820,7 @@ function renderVariacion(){
   const empresas = state.empresas.length ? state.empresas : EMPRESAS;
   let html = '';
   empresas.forEach(emp=>{
-    const empRows = getAllData().filter(r=>r.empresa===emp);
+    const empRows = excluirActivosSiAplica(getAllData()).filter(r=>r.empresa===emp);
     const mesesPresentes = MESES_ORDEN.filter(m=>empRows.some(r=>r.mes===m));
     if(mesesPresentes.length < 2){
       html += `<tr><td>${emp}</td><td colspan="4" style="text-align:center; color:var(--paper-faint);">Historial insuficiente para comparar</td></tr>`;
@@ -2837,7 +2865,7 @@ function renderVariacion(){
 
 // ===================== TOP CLIENTS / COUNTERPARTIES =====================
 function renderRankings(){
-  const rows = getFiltered();
+  const rows = getFilteredOperativo();
 
   function topBy(tipo, n=6){
     const map = {};
@@ -2883,7 +2911,7 @@ function renderCompositionInto(gridId, prefijo){
   `).join('');
 
   empresas.forEach((e,idx)=>{
-    const rows = getAllData().filter(r=>r.empresa===e && r.tipo_mov==='INGRESO' && (state.meses.length === 0 || state.meses.includes(r.mes)));
+    const rows = excluirActivosSiAplica(getAllData()).filter(r=>r.empresa===e && r.tipo_mov==='INGRESO' && (state.meses.length === 0 || state.meses.includes(r.mes)));
     const map = {};
     rows.forEach(r=>{ map[r.categoria] = (map[r.categoria]||0) + r.monto; });
     const entries = Object.entries(map).sort((a,b)=>b[1]-a[1]);
@@ -2950,7 +2978,7 @@ function getCategoriaColorMap(){
 }
 
 function buildPieData(tipoMov, modo){
-  const rows = getFiltered().filter(r => r.tipo_mov === tipoMov);
+  const rows = getFilteredOperativo().filter(r => r.tipo_mov === tipoMov);
   const map = {};
   rows.forEach(r=>{
     const key = modo === 'empresa' ? r.empresa : r.categoria;
@@ -3931,7 +3959,7 @@ const movsState = {
 };
 
 function movsFilteredRows(){
-  const all = getAllData();
+  const all = excluirActivosSiAplica(getAllData());
   const q = movsState.search.trim().toLowerCase();
   let rows = all.filter(r=>{
     if(!empresaEnFiltro(r.empresa)) return false;
