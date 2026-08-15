@@ -4557,6 +4557,11 @@ function renderCoberturaTabla(filas){
   datos.forEach(f => {
     const pct = f.pago > 0 ? (f.pago - f.faltante) / f.pago * 100 : 100;
     const cls = f.faltante > 0.01 ? 'neg' : '';
+    const semaforo = f.faltante > 0.01
+      ? '<span style="color:#e0203c;" title="No se alcanzó a cubrir">●</span>'
+      : (f.deFlujo > 0.01
+        ? '<span style="color:#c99a00;" title="Cubierto con flujo acumulado">●</span>'
+        : '<span style="color:#00875f;" title="Cubierto con utilidad">●</span>');
     html += `<tr class="subtotal">
       <td>${modoAgregacion === 'porMes' ? f.periodoLabel : f.activo}</td>
       ${modoAgregacion==='porActivo' ? `<td>${f.empresa}</td>` : ''}
@@ -4564,7 +4569,7 @@ function renderCoberturaTabla(filas){
       <td>${f.deUtilidad > 0.01 ? fmtMoney(f.deUtilidad) : '—'}</td>
       <td>${f.deFlujo > 0.01 ? fmtMoney(f.deFlujo) : '—'}</td>
       <td class="${cls}">${f.faltante > 0.01 ? fmtMoney(f.faltante) : '—'}</td>
-      <td class="${cls}">${pct.toFixed(0)}%</td>
+      <td class="${cls}">${semaforo} ${pct.toFixed(0)}%</td>
     </tr>`;
   });
   table.innerHTML = html;
