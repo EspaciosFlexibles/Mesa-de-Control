@@ -4441,7 +4441,13 @@ function calcularCoberturaHistorica(empresa){
   const ancla = getAncla(empresa);
   const flujoAcumuladoPorPeriodo = calcularAcumulado(periodos, rowsEmp, ancla);
 
-  const activosEmp = liveActivosData.filter(a => a.empresa === empresa && a.pago_recurrente > 0 && (state.activosFiltro.length === 0 || state.activosFiltro.includes(a.activo)));
+  // OJO: aquí SIEMPRE se incluyen TODOS los activos de la empresa, sin importar el filtro de
+  // Activo de arriba — el reparto en cascada (quién consume primero la utilidad/flujo del mes)
+  // depende de la competencia real entre TODOS los activos por el mismo dinero disponible. Si
+  // filtráramos aquí, un activo "aislado" parecería cubrirse siempre con pura utilidad, aunque
+  // en la realidad otros activos más caros ya se hayan comido esa utilidad primero. El filtro
+  // de Activo se aplica DESPUÉS, solo para decidir qué filas se muestran (ver abajo).
+  const activosEmp = liveActivosData.filter(a => a.empresa === empresa && a.pago_recurrente > 0);
   const filas = [];
 
   periodos.forEach((p, idx) => {
@@ -4482,7 +4488,11 @@ function calcularCoberturaHistorica(empresa){
     });
   });
 
-  return filas;
+  // El filtro de Activo (si hay uno puesto arriba) se aplica aquí, sobre el resultado YA
+  // calculado con la cascada completa — así se ven solo las filas de ese activo, pero con los
+  // números reales de cómo se repartió el dinero entre TODOS los activos de la empresa.
+  const filasFiltradas = state.activosFiltro.length === 0 ? filas : filas.filter(f => state.activosFiltro.includes(f.activo));
+  return filasFiltradas;
 }
 
 function renderCoberturaActivos(){
@@ -4698,10 +4708,65 @@ function renderCoberturaChart(filas){
     options:{
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
+      onClick: (evt, elements) => {
+        if(!elements.length) return;
+        const item = datos[elements[0].index];
+        if(!item) return;
+
+        if(usaAgregacion && coberturaAgregacionState.modo === 'porActivo'){
+          const yaAislado = state.activosFiltro.length === 1 && state.activosFiltro[0] === item.activo;
+          if(!yaAislado){
+            state.activosFiltro = [item.activo];
+            refrescarBotonesFiltroGlobal();
+            renderActivos();
+          } else {
+            goToMovimientosFiltrado({ empresa: item.empresa, activo: item.activo });
+          }
+        } else if(usaAgregacion && coberturaAgregacionState.modo === 'porMes'){
+          const yaAislado = state.meses.length === 1 && state.meses[0] === item.mes;
+          if(!yaAislado){
+            state.meses = [item.mes];
+            refrescarBotonesFiltroGlobal();
+            renderActivos();
+          } else {
+            goToMovimientosFiltrado({ mes: item.mes });
+          }
+        } else {
+          // Detalle: cada barra ya es un pago único (empresa + activo + mes).
+          const yaAislado = state.activosFiltro.length === 1 && state.activosFiltro[0] === item.activo && state.meses.length === 1 && state.meses[0] === item.mes;
+          if(!yaAislado){
+            state.activosFiltro = [item.activo];
+            state.meses = [item.mes];
+            refrescarBotonesFiltroGlobal();
+            renderActivos();
+          } else {
+            goToMovimientosFiltrado({ empresa: item.empresa, activo: item.activo, mes: item.mes });
+          }
+        }
+      },
+      onHover: (evt, elements) => {
+        evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+      },
       plugins:{
         legend:{ position:'bottom', labels:{ color:'#5a5a66', font:{family:'Inter', size:11}, boxWidth:10, padding:8 } },
         tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:8,
-          callbacks:{ label:(ctx)=> ctx.parsed.y > 0.01 ? `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` : null } }
+          callbacks:{
+            label:(ctx)=> ctx.parsed.y > 0.01 ? `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` : null,
+            afterBody:(items)=>{
+              const item = datos[items[0].dataIndex];
+              if(!item) return '';
+              if(usaAgregacion && coberturaAgregacionState.modo === 'porActivo'){
+                const yaAislado = state.activosFiltro.length === 1 && state.activosFiltro[0] === item.activo;
+                return yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este activo';
+              }
+              if(usaAgregacion && coberturaAgregacionState.modo === 'porMes'){
+                const yaAislado = state.meses.length === 1 && state.meses[0] === item.mes;
+                return yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este mes';
+              }
+              const yaAislado = state.activosFiltro.length === 1 && state.activosFiltro[0] === item.activo && state.meses.length === 1 && state.meses[0] === item.mes;
+              return yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este pago';
+            }
+          } }
       },
       scales:{
         x:{ stacked:true, grid:{ display:false }, ticks:{ color:'#5a5a66', font:{family:'IBM Plex Mono', size:9}, maxRotation:60, minRotation:60 } },
