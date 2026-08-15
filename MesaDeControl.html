@@ -126,6 +126,35 @@ body{
 .tab-btn:hover{ color: var(--paper); }
 .tab-btn.active{ color: var(--copper-bright); border-bottom-color: var(--copper-bright); }
 
+.subtabs{ display:flex; gap:4px; border-bottom: 1px solid var(--line); margin-bottom:18px; }
+.subtab-btn{
+  font-family: var(--sans); font-size: 12.5px; font-weight:600; color: var(--paper-faint);
+  background:none; border:none; padding: 8px 3px; margin-right:18px; cursor:pointer;
+  border-bottom: 2px solid transparent; transition: all .15s ease; position:relative; top:1px;
+}
+.subtab-btn:hover{ color: var(--paper); }
+.subtab-btn.active{ color: var(--copper-bright); border-bottom-color: var(--copper-bright); }
+
+.activo-row-clickable{ cursor:pointer; }
+.activo-row-clickable:hover td{ background: rgba(21,21,26,0.03); }
+.activo-row-clickable.activo-row-selected td{ background: rgba(13,122,69,0.07); }
+.activo-row-clickable.activo-row-selected td:first-child{ box-shadow: inset 3px 0 0 var(--copper-bright); }
+
+#activo-detalle-panel .detalle-close{
+  position:absolute; top:14px; right:16px; background:none; border:none; cursor:pointer;
+  font-family:var(--mono); font-size:13px; color:var(--paper-faint);
+}
+#activo-detalle-panel .detalle-close:hover{ color: var(--rose); }
+#activo-detalle-panel{ position:relative; }
+.detalle-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px 28px; margin-top:16px; }
+.detalle-campo{ }
+.detalle-campo-label{ font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint); margin-bottom:4px; }
+.detalle-campo-valor{ font-family:var(--serif); font-size:19px; font-weight:600; color:var(--paper); }
+.detalle-campo-valor.pos{ color: var(--teal-bright); }
+.detalle-campo-valor.neg{ color: var(--rose); }
+.detalle-seccion-titulo{ font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--copper-bright); margin: 26px 0 4px; padding-top:16px; border-top:1px solid var(--line); }
+.detalle-seccion-titulo:first-of-type{ border-top:none; padding-top:0; margin-top:16px; }
+
 /* ===== FILTER BAR ===== */
 .filterbar{
   display:flex; flex-wrap:wrap; gap: 10px;
@@ -493,7 +522,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <button class="tab-btn active" data-tab="flujos">General</button>
     <button class="tab-btn" data-tab="estado-resultados">Estado de Resultados</button>
     <button class="tab-btn" data-tab="flujo-efectivo">Flujo de Efectivo</button>
-    <button class="tab-btn" data-tab="activos">Activos · ROI / ROA</button>
+    <button class="tab-btn" data-tab="activos">Activos</button>
     <button class="tab-btn" data-tab="movimientos">Movimientos</button>
   </div>
 
@@ -513,6 +542,11 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <div class="msdrop" id="msdrop-empresa">
       <button class="msdrop-btn" type="button" id="msdrop-btn-empresa">Todas ▾</button>
       <div class="msdrop-panel" id="msdrop-panel-empresa"></div>
+    </div>
+    <span class="flabel" id="flabel-activo" style="display:none;">ACTIVO</span>
+    <div class="msdrop" id="msdrop-activo" style="display:none;">
+      <button class="msdrop-btn" type="button" id="msdrop-btn-activo">Todos ▾</button>
+      <div class="msdrop-panel" id="msdrop-panel-activo"></div>
     </div>
     <div class="view-toggle" id="modo-activos-toggle" style="margin-left:4px;" title="No afecta la pestaña Activos — ahí siempre ves todo.">
       <button class="active" data-modo="todo">Todo (con activos)</button>
@@ -880,23 +914,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
   <!-- ===================== TAB: ACTIVOS ===================== -->
   <div class="tab-panel" id="tab-activos" style="display:none;">
 
-    <!-- ACTIVOS PENDIENTES DE PAGO -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Deuda de capital</div>
-          <div class="section-title" id="activos-pago-titulo">Activos que aún se están pagando</div>
-        </div>
-        <div class="view-toggle" id="activos-pago-toggle">
-          <button class="active" data-vista="pendientes">Pendientes de pago</button>
-          <button data-vista="pagados">Ya pagados al 100%</button>
-        </div>
-      </div>
-      <div class="panel pivot-wrap">
-        <table class="pivot" id="activos-pendientes-table"></table>
-      </div>
-    </section>
-
     <div class="kpi-row" id="activos-kpi-row"></div>
 
     <section class="section">
@@ -915,43 +932,62 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <section class="section">
       <div class="section-head">
         <div>
-          <div class="section-eyebrow">Detalle</div>
-          <div class="section-title">Ficha financiera de cada activo</div>
+          <div class="section-eyebrow">Detalle por activo</div>
+          <div class="section-title">Tus activos</div>
         </div>
+        <div class="section-note">Da clic en cualquier activo de las tablas de abajo para ver su ficha completa.</div>
       </div>
-      <div class="panel pivot-wrap">
-        <table class="pivot" id="activos-table">
-          <thead>
-            <tr>
-              <th>Activo</th>
-              <th>Costo</th>
-              <th>Renta teórica /mes</th>
-              <th>ROI teórico anual</th>
-              <th>Renta real /mes</th>
-              <th>ROI real anual</th>
-              <th>Payback</th>
-              <th>% Recuperado</th>
-              <th>Brecha</th>
-              <th>Estatus</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
 
-    <!-- FLUJO POR ACTIVO -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Conectado vía columna "Activo"</div>
-          <div class="section-title">Flujo de efectivo por activo</div>
+      <div class="subtabs" id="activos-subtabs">
+        <button class="subtab-btn active" data-subtab="ficha">Ficha financiera de cada activo</button>
+        <button class="subtab-btn" data-subtab="pendientes">Activos que aún se están pagando</button>
+        <button class="subtab-btn" data-subtab="flujo">Flujo de efectivo por activo</button>
+      </div>
+
+      <div class="activos-subtab-panel" id="subtab-ficha">
+        <div class="panel pivot-wrap">
+          <table class="pivot" id="activos-table">
+            <thead>
+              <tr>
+                <th>Activo</th>
+                <th>Costo</th>
+                <th>Renta teórica /mes</th>
+                <th>ROI teórico anual</th>
+                <th>Renta real /mes</th>
+                <th>ROI real anual</th>
+                <th>Payback</th>
+                <th>% Recuperado</th>
+                <th>Brecha</th>
+                <th>Estatus</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
         </div>
-        <div class="section-note">Renta real cobrada y egresos asociados, solo para los activos ya conectados en tus movimientos de Consolidado.</div>
       </div>
-      <div class="panel pivot-wrap">
-        <table class="pivot" id="flujo-activo-table"></table>
+
+      <div class="activos-subtab-panel" id="subtab-pendientes" style="display:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">
+          <div class="section-title" id="activos-pago-titulo" style="font-size:16px;">Activos que aún se están pagando</div>
+          <div class="view-toggle" id="activos-pago-toggle">
+            <button class="active" data-vista="pendientes">Pendientes de pago</button>
+            <button data-vista="pagados">Ya pagados al 100%</button>
+          </div>
+        </div>
+        <div class="panel pivot-wrap">
+          <table class="pivot" id="activos-pendientes-table"></table>
+        </div>
       </div>
+
+      <div class="activos-subtab-panel" id="subtab-flujo" style="display:none;">
+        <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;">Renta real cobrada y egresos asociados, solo para los activos ya conectados en tus movimientos de Consolidado.</div>
+        <div class="panel pivot-wrap">
+          <table class="pivot" id="flujo-activo-table"></table>
+        </div>
+      </div>
+
+      <!-- FICHA DE DETALLE EXPANDIDA -->
+      <div class="panel" id="activo-detalle-panel" style="display:none; margin-top:20px;"></div>
     </section>
 
     <!-- INGRESOS Y EGRESOS VINCULADOS A ACTIVOS (toggle Tipo/Empresa/Activo) -->
@@ -1607,6 +1643,7 @@ const state = {
   meses: [],    // [] = todos
   anios: [],    // [] = todos
   modoActivos: 'todo', // 'todo' = incluye ingresos/egresos de activos | 'sin' = los excluye
+  activosFiltro: [], // [] = todos — solo aplica en la pestaña Activos
 };
 
 // true si esa empresa debe mostrarse con el filtro global actual (vacío = todas).
@@ -1716,12 +1753,14 @@ function crearFiltroGlobalDropdown(key, btnId, panelId, getOptions, getLabel){
   return { actualizarBoton };
 }
 
-let filtroGlobalAnio, filtroGlobalMes, filtroGlobalEmpresa;
+let filtroGlobalAnio, filtroGlobalMes, filtroGlobalEmpresa, filtroGlobalActivo;
 function initFiltroGlobal(){
   filtroGlobalAnio = crearFiltroGlobalDropdown('anios', 'msdrop-btn-anio', 'msdrop-panel-anio', getAniosDisponibles);
   filtroGlobalMes = crearFiltroGlobalDropdown('meses', 'msdrop-btn-mes', 'msdrop-panel-mes',
     () => MESES_ORDEN.filter(m => getAllData().some(r=>r.mes===m)));
   filtroGlobalEmpresa = crearFiltroGlobalDropdown('empresas', 'msdrop-btn-empresa', 'msdrop-panel-empresa', getEmpresas);
+  filtroGlobalActivo = crearFiltroGlobalDropdown('activosFiltro', 'msdrop-btn-activo', 'msdrop-panel-activo',
+    () => getActivos().map(a=>a.activo).filter((v,i,arr)=>arr.indexOf(v)===i).sort());
 
   document.querySelectorAll('#modo-activos-toggle button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1733,8 +1772,9 @@ function initFiltroGlobal(){
   });
 
   document.getElementById('reset-btn').addEventListener('click', ()=>{
-    state.empresas = []; state.meses = []; state.anios = []; state.modoActivos = 'todo';
+    state.empresas = []; state.meses = []; state.anios = []; state.modoActivos = 'todo'; state.activosFiltro = [];
     document.querySelectorAll('#modo-activos-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.modo==='todo'));
+    ocultarDetalleActivo();
     refrescarBotonesFiltroGlobal();
     renderCurrentTab();
   });
@@ -1747,6 +1787,7 @@ function refrescarBotonesFiltroGlobal(){
   if(filtroGlobalAnio) filtroGlobalAnio.actualizarBoton();
   if(filtroGlobalMes) filtroGlobalMes.actualizarBoton();
   if(filtroGlobalEmpresa) filtroGlobalEmpresa.actualizarBoton();
+  if(filtroGlobalActivo) filtroGlobalActivo.actualizarBoton();
 }
 
 // ===================== KPI ROW =====================
@@ -2662,8 +2703,38 @@ function resaltarLineasER(lineas){
   });
 }
 
-// Utilidad neta del periodo actual, en grande, arriba de toda la pestaña — mismo criterio de
-// "último mes" que el resto de esta pestaña, se mueve solo si cambian los filtros de arriba.
+// Si hay exactamente un mes elegido, se muestra ese mes solo (comportamiento normal). Si NO
+// hay mes elegido (ni año, o el/los años que sí estén filtrados), se ACUMULA: del año más
+// reciente con datos si no filtraste año, o de el/los años que sí filtraste. Con varios meses
+// elegidos (sin ser exactamente uno), también se acumula solo esos meses.
+function determinarPeriodosHero(periodosDisponibles){
+  if(state.meses.length === 1){
+    const candidatos = periodosDisponibles.filter(p => p.mes === state.meses[0]);
+    return candidatos.length ? [candidatos[candidatos.length-1]] : [];
+  }
+  let periodosBase = periodosDisponibles;
+  if(state.meses.length > 1){
+    periodosBase = periodosBase.filter(p => state.meses.includes(p.mes));
+  }
+  if(state.anios.length > 0){
+    return periodosBase.filter(p => state.anios.includes(p.anio));
+  }
+  // Sin año filtrado tampoco: usa el año más reciente presente en los datos ("año corriendo").
+  if(periodosBase.length === 0) return [];
+  const anioActual = periodosBase[periodosBase.length-1].anio;
+  return periodosBase.filter(p => p.anio === anioActual);
+}
+
+function labelRangoPeriodos(periodos){
+  if(periodos.length === 0) return '';
+  if(periodos.length === 1) return periodos[0].mes + ' ' + periodos[0].anio;
+  const primero = periodos[0], ultimo = periodos[periodos.length-1];
+  if(primero.anio === ultimo.anio) return `${primero.mes} – ${ultimo.mes} ${ultimo.anio}`;
+  return `${primero.mes} ${primero.anio} – ${ultimo.mes} ${ultimo.anio}`;
+}
+
+// Utilidad neta en grande, arriba de toda la pestaña — un solo mes si filtraste exactamente
+// uno; si no, el acumulado del año corriendo (o de el/los años que sí hayas filtrado).
 function renderERHero(){
   const cont = document.getElementById('er-hero');
   if(!cont) return;
@@ -2671,16 +2742,17 @@ function renderERHero(){
     empresaEnFiltro(d.empresa) && (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
   );
   const periodos = getPeriodosOrdenados(baseRows);
-  const periodo = elegirPeriodoActualGenerico(periodos);
-  if(!periodo){
+  const periodosHero = determinarPeriodosHero(periodos);
+  if(periodosHero.length === 0){
     cont.innerHTML = '<div class="empty-note">Sin datos para este filtro.</div>';
     return;
   }
-  const rowsPeriodo = baseRows.filter(r => r.mes === periodo.mes && getAnioDeFila(r) === periodo.anio);
-  const l = calcularLineasER(rowsPeriodo);
+  const rowsHero = baseRows.filter(r => periodosHero.some(p => p.mes === r.mes && getAnioDeFila(r) === p.anio));
+  const l = calcularLineasER(rowsHero);
   const margenNeto = l.ingreso !== 0 ? (l.utilidadNeta/l.ingreso*100) : 0;
+  const etiquetaPeriodo = labelRangoPeriodos(periodosHero);
   cont.innerHTML = `
-    <div class="er-hero-label">Utilidad neta — ${periodo.mes} ${periodo.anio}</div>
+    <div class="er-hero-label">Utilidad neta — ${etiquetaPeriodo}</div>
     <div class="er-hero-row">
       <div class="er-hero-value ${l.utilidadNeta<0?'neg':''}">${fmtMoney(l.utilidadNeta)}</div>
       <div class="er-hero-pct ${margenNeto<0?'neg':''}">${margenNeto.toFixed(1)}% del ingreso total</div>
@@ -3638,7 +3710,7 @@ const activosPagoState = { vista: 'pendientes' };
 // Solo se evalúa cuando ambos datos existen — si no hay Cantidad pagada capturada todavía, el
 // activo no entra en ninguna de las dos vistas (ni pagado ni pendiente), para no inventar info.
 function getActivosConEstadoDePago(){
-  const activos = getActivos().filter(a => empresaEnFiltro(a.empresa));
+  const activos = getActivos().filter(a => empresaEnFiltro(a.empresa) && (state.activosFiltro.length === 0 || state.activosFiltro.includes(a.activo)));
   return activos
     .filter(a => a.cantidad_pagada > 0 && a.costo > 0)
     .map(a => {
@@ -3648,6 +3720,97 @@ function getActivosConEstadoDePago(){
       const rentaMostrar = rentaReal !== null ? rentaReal : (a.precio_renta || null);
       return { ...a, pctPagado, faltante, rentaMostrar, rentaEsReal: rentaReal !== null };
     });
+}
+
+// ===================== SELECCIÓN DE ACTIVO (filtro + ficha de detalle expandida) =====================
+// Conecta el clic en cualquier fila de las 3 tablas (Ficha financiera, Pendientes de pago,
+// Flujo por activo) con seleccionarActivo(), y marca visualmente la fila ya seleccionada.
+function adjuntarClicsActivo(container){
+  container.querySelectorAll('tr[data-activo]').forEach(tr=>{
+    tr.classList.add('activo-row-clickable');
+    if(state.activosFiltro.length === 1 && state.activosFiltro[0] === tr.dataset.activo){
+      tr.classList.add('activo-row-selected');
+    }
+    tr.addEventListener('click', ()=> seleccionarActivo(tr.dataset.activo));
+  });
+}
+
+function seleccionarActivo(nombre){
+  state.activosFiltro = [nombre];
+  refrescarBotonesFiltroGlobal();
+  renderActivos();
+  const panel = document.getElementById('activo-detalle-panel');
+  if(panel) panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function ocultarDetalleActivo(){
+  const panel = document.getElementById('activo-detalle-panel');
+  if(panel){ panel.style.display = 'none'; panel.innerHTML = ''; }
+}
+
+function cerrarDetalleActivo(){
+  state.activosFiltro = [];
+  refrescarBotonesFiltroGlobal();
+  renderActivos();
+}
+
+// Ficha combinada con TODA la información del activo (ficha financiera + estado de pago +
+// flujo de efectivo conectado) en una sola tarjeta grande, a todo lo ancho de la página.
+function renderActivoDetalle(nombre){
+  const panel = document.getElementById('activo-detalle-panel');
+  if(!panel) return;
+  const a = getActivosConMetricas().find(x => x.activo === nombre);
+  if(!a){ ocultarDetalleActivo(); return; }
+
+  const estadoPago = getActivosConEstadoDePago().find(x => x.activo === nombre) || null;
+  const rentaRealConectada = ingresoRealExactoPorActivo(nombre);
+  const egresoRealConectado = egresoRealExactoPorActivo(nombre);
+  const netoConectado = (rentaRealConectada || 0) - (egresoRealConectado || 0);
+  const hayFlujoConectado = rentaRealConectada !== null || egresoRealConectado !== null;
+
+  const campo = (label, valor, cls='') => `
+    <div class="detalle-campo">
+      <div class="detalle-campo-label">${label}</div>
+      <div class="detalle-campo-valor ${cls}">${valor}</div>
+    </div>`;
+
+  let html = `
+    <button class="detalle-close" onclick="cerrarDetalleActivo()">✕ Cerrar</button>
+    <div style="font-family:var(--serif); font-size:24px; font-weight:600; color:var(--paper);">${a.activo}</div>
+    <div style="font-family:var(--mono); font-size:11.5px; color:var(--paper-faint); margin-top:2px;">${a.empresa} · ${a.tipo} — ${a.rentada ? 'Rentada' : (a.sinRentaCapturada ? 'En desarrollo' : 'Libre')}</div>
+
+    <div class="detalle-seccion-titulo">Inversión y pago</div>
+    <div class="detalle-grid">
+      ${campo('Costo total', fmtMoney(a.costo))}
+      ${estadoPago ? campo('Pagado a la fecha', fmtMoney(estadoPago.cantidad_pagada)) : campo('Pagado a la fecha', a.cantidad_pagada ? fmtMoney(a.cantidad_pagada) : '— sin capturar')}
+      ${estadoPago ? campo('% pagado', estadoPago.pctPagado.toFixed(1)+'%') : ''}
+      ${estadoPago ? campo(estadoPago.faltante>0?'Falta por pagar':'Diferencia', fmtMoney(estadoPago.faltante), estadoPago.faltante>0?'neg':'pos') : ''}
+      ${campo('Pago mensual', a.pago_recurrente ? fmtMoney(a.pago_recurrente) : '—')}
+      ${campo('Periodicidad', a.periodicidad || '—')}
+      ${a.mesPago ? campo('Mes(es) de pago', a.mesPago) : ''}
+    </div>
+
+    <div class="detalle-seccion-titulo">Renta y retorno</div>
+    <div class="detalle-grid">
+      ${campo('Renta teórica /mes', fmtMoney(a.rentaMensualTeorica))}
+      ${campo('Renta real /mes', a.rentaMensualReal!==null ? fmtMoney(a.rentaMensualReal) : '— sin datos')}
+      ${campo('ROI teórico anual', a.roiTeorico!==null ? a.roiTeorico.toFixed(1)+'%' : '—')}
+      ${campo('ROI real anual', a.roiReal!==null ? a.roiReal.toFixed(1)+'%' : '— sin datos', a.roiReal!==null ? (a.roiReal>=0?'pos':'neg') : '')}
+      ${campo('Payback', a.paybackAniosReal!==null && isFinite(a.paybackAniosReal) ? a.paybackAniosReal.toFixed(1)+' años' : (a.paybackAniosTeorico!==null ? '~'+a.paybackAniosTeorico.toFixed(1)+' años (teórico)' : '—'))}
+      ${campo('% Recuperado', a.pctRecuperado!==null ? a.pctRecuperado.toFixed(1)+'%' : '— sin conectar')}
+      ${campo('Brecha vs. teórico', a.brechaPct!==null ? (a.brechaPct>=0?'+':'')+a.brechaPct.toFixed(0)+'%' : '—', a.brechaPct!==null ? (a.brechaPct>=0?'pos':'neg') : '')}
+    </div>
+
+    <div class="detalle-seccion-titulo">Flujo de efectivo conectado (columna "Activo" en Movimientos)</div>
+    <div class="detalle-grid">
+      ${hayFlujoConectado ? campo('Renta real /mes', rentaRealConectada!==null ? fmtMoney(rentaRealConectada) : '—') : ''}
+      ${hayFlujoConectado ? campo('Egreso real /mes', egresoRealConectado!==null ? fmtMoney(egresoRealConectado) : '—', egresoRealConectado ? 'neg' : '') : ''}
+      ${hayFlujoConectado ? campo('Neto real /mes', fmtMoney(netoConectado), netoConectado>=0?'pos':'neg') : ''}
+      ${!hayFlujoConectado ? '<div style="color:var(--paper-faint); font-size:13px; font-family:var(--sans);">Todavía no hay movimientos en Consolidado con este activo anotado en la columna "Activo".</div>' : ''}
+    </div>
+  `;
+  panel.innerHTML = html;
+  panel.style.display = 'block';
 }
 
 function renderActivosPendientes(){
@@ -3678,7 +3841,7 @@ function renderActivosPendientes(){
     const rentaCell = a.rentaMostrar
       ? `${fmtMoney(a.rentaMostrar)}${a.rentaEsReal ? ' <span style="color:var(--teal-bright); font-size:10px;" title="Renta real conectada">●</span>' : ' <span style="color:var(--paper-faint); font-size:10px;" title="Renta teórica (sin conectar aún)">○</span>'}`
       : '—';
-    html += `<tr>
+    html += `<tr data-activo="${a.activo}">
       <td style="text-align:left;">
         <div style="font-weight:600; color:var(--paper);">${a.activo}</div>
         <div style="font-family:var(--mono); font-size:10.5px; color:var(--paper-faint); margin-top:2px;">${a.empresa} · ${a.tipo}</div>
@@ -3702,6 +3865,7 @@ function renderActivosPendientes(){
   </tr>`;
   html += '</tbody>';
   table.innerHTML = html;
+  adjuntarClicsActivo(table);
 }
 
 function initActivosPagoToggle(){
@@ -3717,6 +3881,19 @@ function initActivosPagoToggle(){
   });
 }
 initActivosPagoToggle();
+
+function initActivosSubtabs(){
+  document.querySelectorAll('#activos-subtabs .subtab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#activos-subtabs .subtab-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.activos-subtab-panel').forEach(p=>p.style.display='none');
+      document.getElementById('subtab-'+btn.dataset.subtab).style.display='';
+    });
+  });
+}
+initActivosSubtabs();
+
 
 // Ingreso real mensual promedio para una combinación Empresa+Tipo, usando todos los meses con datos en Base.
 function ingresoRealPromedioMensual(empresa, tipo){
@@ -3824,7 +4001,7 @@ function getActivosConMetricas(){
 }
 
 function getActivosFiltrados(){
-  return getActivosConMetricas().filter(a => empresaEnFiltro(a.empresa));
+  return getActivosConMetricas().filter(a => empresaEnFiltro(a.empresa) && (state.activosFiltro.length === 0 || state.activosFiltro.includes(a.activo)));
 }
 
 // ===================== RENDER: KPI SUMMARY =====================
@@ -3842,9 +4019,10 @@ function renderActivosKPIs(){
   const ingresoTeoricoTotal = rows.reduce((a,r)=>a+r.ingresoAnualTeorico, 0);
   const conReal = rows.filter(r=>r.ingresoAnualReal !== null);
   const ingresoRealTotal = conReal.reduce((a,r)=>a+r.ingresoAnualReal, 0);
-  const roiTeoricoPromedio = costoTotal > 0 ? (ingresoTeoricoTotal/costoTotal)*100 : 0;
   const roiRealPromedio = costoTotal > 0 && conReal.length ? (ingresoRealTotal/rows.filter(r=>r.ingresoAnualReal!==null).reduce((a,r)=>a+r.costo,0))*100 : null;
   const rentadas = rows.filter(r=>r.rentada).length;
+  const pctRentados = rows.length > 0 ? (rentadas/rows.length*100) : 0;
+  const rentaMensualTotal = rows.reduce((a,r)=> a + (r.rentaMensualReal !== null ? r.rentaMensualReal : (r.rentaMensualTeorica || 0)), 0);
 
   wrap.innerHTML = `
     <div class="kpi k-utilidad">
@@ -3853,9 +4031,9 @@ function renderActivosKPIs(){
       <div class="kpi-delta flat">${rows.length} activo${rows.length===1?'':'s'} registrados, ${rentadas} en renta</div>
     </div>
     <div class="kpi k-ingreso">
-      <div class="kpi-label">ROI teórico anualizado</div>
-      <div class="kpi-value">${roiTeoricoPromedio.toFixed(1)}%</div>
-      <div class="kpi-delta flat">según precio de renta capturado</div>
+      <div class="kpi-label">% de Activos en Renta</div>
+      <div class="kpi-value">${pctRentados.toFixed(0)}%</div>
+      <div class="kpi-delta flat">${rentadas} de ${rows.length} activos</div>
     </div>
     <div class="kpi k-margen">
       <div class="kpi-label">ROI real anualizado</div>
@@ -3863,14 +4041,9 @@ function renderActivosKPIs(){
       <div class="kpi-delta flat">según ingreso cobrado en Base</div>
     </div>
     <div class="kpi k-egreso">
-      <div class="kpi-label">Payback promedio (real)</div>
-      <div class="kpi-value">${(() => {
-        const conPayback = rows.filter(r=>r.paybackAniosReal !== null && isFinite(r.paybackAniosReal));
-        if(!conPayback.length) return '—';
-        const avg = conPayback.reduce((a,r)=>a+r.paybackAniosReal,0)/conPayback.length;
-        return avg.toFixed(1)+' años';
-      })()}</div>
-      <div class="kpi-delta flat">tiempo estimado de recuperación</div>
+      <div class="kpi-label">Renta que generan</div>
+      <div class="kpi-value">${fmtMoney(rentaMensualTotal)}</div>
+      <div class="kpi-delta flat">por mes, real donde hay dato — si no, teórica</div>
     </div>
   `;
 }
@@ -3897,7 +4070,7 @@ function renderActivosTable(){
       ? `<div class="bar-cell"><span style="font-family:var(--mono); font-size:12px;">${a.pctRecuperado.toFixed(1)}%</span><div class="mini-bar" style="width:${Math.max(a.pctRecuperado,3)}px; max-width:50px;"></div></div>`
       : `<span style="color:var(--paper-faint); font-size:11px;" title="Conecta esta fila a un Activo en la columna 'Activo' de tus movimientos para calcular esto con precisión.">— sin conectar</span>`;
     return `
-    <tr>
+    <tr data-activo="${a.activo}">
       <td style="text-align:left;">
         <div style="font-weight:600; color:var(--paper);">${a.activo}</div>
         <div style="font-family:var(--mono); font-size:10.5px; color:var(--paper-faint); margin-top:2px;">${a.empresa} · ${a.tipo}</div>
@@ -3913,6 +4086,7 @@ function renderActivosTable(){
       <td>${a.rentada ? '<span style="color:var(--teal-bright);">● Rentada</span>' : (a.sinRentaCapturada ? '<span style="color:var(--gold);">◐ En desarrollo</span>' : '<span style="color:var(--paper-faint);">○ Libre</span>')}</td>
     </tr>
   `;}).join('');
+  adjuntarClicsActivo(tbody);
 }
 
 // ===================== FLUJO POR ACTIVO (conectado vía columna "Activo") =====================
@@ -3920,7 +4094,7 @@ function renderFlujoPorActivo(){
   const table = document.getElementById('flujo-activo-table');
   if(!table) return;
 
-  const activos = getActivos().filter(a => empresaEnFiltro(a.empresa));
+  const activos = getActivos().filter(a => empresaEnFiltro(a.empresa) && (state.activosFiltro.length === 0 || state.activosFiltro.includes(a.activo)));
   const conectados = activos
     .map(a => ({
       ...a,
@@ -3940,7 +4114,7 @@ function renderFlujoPorActivo(){
     const renta = a.rentaReal || 0, egreso = a.egresoReal || 0;
     const neto = renta - egreso;
     totalRentaReal += renta; totalEgresoReal += egreso;
-    html += `<tr>
+    html += `<tr data-activo="${a.activo}">
       <td style="text-align:left;">
         <div style="font-weight:600; color:var(--paper);">${a.activo}</div>
         <div style="font-family:var(--mono); font-size:10.5px; color:var(--paper-faint); margin-top:2px;">${a.empresa} · ${a.tipo}</div>
@@ -3955,6 +4129,7 @@ function renderFlujoPorActivo(){
   html += `<tr class="subtotal"><td>Total</td><td>${fmtMoney(totalRentaReal)}</td><td>—</td><td class="neg">${fmtMoney(totalEgresoReal)}</td><td class="${netoTotal>=0?'pos':'neg'}">${fmtMoney(netoTotal)}</td></tr>`;
   html += '</tbody>';
   table.innerHTML = html;
+  adjuntarClicsActivo(table);
 }
 
 // ===================== INGRESOS/EGRESOS VINCULADOS A ACTIVOS (toggle Tipo/Empresa/Activo) =====================
@@ -4414,6 +4589,10 @@ function renderActivos(){
   renderActivosTipoChart();
   renderFinanciamiento();
   renderCoberturaActivos();
+  // Si hay exactamente un activo filtrado (por clic o por el dropdown de arriba), mantiene su
+  // ficha de detalle sincronizada con cualquier otro filtro que haya cambiado (año/mes/empresa).
+  if(state.activosFiltro.length === 1) renderActivoDetalle(state.activosFiltro[0]);
+  else ocultarDetalleActivo();
 }
 
 </script>
@@ -4668,6 +4847,9 @@ function switchToTab(tabName){
   currentTab = tabName;
   document.querySelectorAll('.tab-panel').forEach(p=>p.style.display = 'none');
   document.getElementById('tab-' + currentTab).style.display = '';
+  const esActivos = currentTab === 'activos';
+  document.getElementById('flabel-activo').style.display = esActivos ? '' : 'none';
+  document.getElementById('msdrop-activo').style.display = esActivos ? '' : 'none';
   renderCurrentTab();
 }
 
