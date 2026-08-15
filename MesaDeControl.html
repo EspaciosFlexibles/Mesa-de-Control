@@ -919,19 +919,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <section class="section">
       <div class="section-head">
         <div>
-          <div class="section-eyebrow">Rendimiento por activo</div>
-          <div class="section-title">ROI real vs. ROI teórico</div>
-        </div>
-        <div class="section-note">Teórico: con base en el precio de renta capturado. Real: el ingreso cobrado en Base se reparte entre los activos de la misma línea de negocio en proporción a su renta teórica.</div>
-      </div>
-      <div class="panel">
-        <canvas id="chart-activos-roi" height="160"></canvas>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-head">
-        <div>
           <div class="section-eyebrow">Detalle por activo</div>
           <div class="section-title">Tus activos</div>
         </div>
@@ -990,6 +977,19 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       <div class="panel" id="activo-detalle-panel" style="display:none; margin-top:20px;"></div>
     </section>
 
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Rendimiento por activo</div>
+          <div class="section-title">ROI real vs. ROI teórico</div>
+        </div>
+        <div class="section-note">Teórico: con base en el precio de renta capturado. Real: el ingreso cobrado en Base se reparte entre los activos de la misma línea de negocio en proporción a su renta teórica.</div>
+      </div>
+      <div class="panel">
+        <canvas id="chart-activos-roi" height="160"></canvas>
+      </div>
+    </section>
+
     <!-- INGRESOS Y EGRESOS VINCULADOS A ACTIVOS (toggle Tipo/Empresa/Activo) -->
     <section class="section">
       <div class="section-head">
@@ -1046,16 +1046,15 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <section class="section">
       <div class="section-head">
         <div>
-          <div class="section-eyebrow">Mes por mes, todo el historial</div>
-          <div class="section-title">¿Alcanzó a pagar cada activo cuando le tocaba?</div>
+          <div class="section-eyebrow">Mes por mes</div>
+          <div class="section-title">Forma de pago inmuebles</div>
         </div>
-        <div class="view-toggle" id="cobertura-toggle">
-          <button class="active" data-modo="mes">Solo utilidad del mes</button>
-          <button data-modo="acumulado">+ Flujo acumulado</button>
+        <div class="view-toggle" id="cobertura-vista-btn">
+          <button data-vista="acumuladoAnio">Ver acumulado del año</button>
         </div>
       </div>
-      <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;">
-        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. El toggle de arriba solo cambia la gráfica — la tabla siempre muestra el detalle completo. Usa el filtro de Año/Mes/Empresa de arriba de la página para acotar esta vista.
+      <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;" id="cobertura-nota">
+        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. Cada barra se apila mostrando qué proporción se cubrió con utilidad, con flujo acumulado, y qué proporción faltó. Sin filtros arriba, se muestra solo el último mes registrado — usa el botón para ver el acumulado del año vigente. Si eliges Año, Mes o Activo arriba, la gráfica respeta ese filtro directo.
       </div>
       <div class="panel">
         <canvas id="chart-cobertura" height="110"></canvas>
@@ -1775,6 +1774,9 @@ function initFiltroGlobal(){
     state.empresas = []; state.meses = []; state.anios = []; state.modoActivos = 'todo'; state.activosFiltro = [];
     document.querySelectorAll('#modo-activos-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.modo==='todo'));
     ocultarDetalleActivo();
+    coberturaVistaState.modo = 'mes';
+    const btnCobertura = document.querySelector('#cobertura-vista-btn button');
+    if(btnCobertura){ btnCobertura.classList.remove('active'); btnCobertura.textContent = 'Ver acumulado del año'; }
     refrescarBotonesFiltroGlobal();
     renderCurrentTab();
   });
@@ -4023,6 +4025,10 @@ function renderActivosKPIs(){
   const rentadas = rows.filter(r=>r.rentada).length;
   const pctRentados = rows.length > 0 ? (rentadas/rows.length*100) : 0;
   const rentaMensualTotal = rows.reduce((a,r)=> a + (r.rentaMensualReal !== null ? r.rentaMensualReal : (r.rentaMensualTeorica || 0)), 0);
+  const unSoloActivo = rows.length === 1;
+  const cardRenta = unSoloActivo
+    ? { valor: rows[0].rentada ? 'Sí, rentado' : 'No rentado', nota: rows[0].rentada ? 'genera ingresos actualmente' : 'sin ingresos capturados' }
+    : { valor: pctRentados.toFixed(0)+'%', nota: `${rentadas} de ${rows.length} activos` };
 
   wrap.innerHTML = `
     <div class="kpi k-utilidad">
@@ -4031,9 +4037,9 @@ function renderActivosKPIs(){
       <div class="kpi-delta flat">${rows.length} activo${rows.length===1?'':'s'} registrados, ${rentadas} en renta</div>
     </div>
     <div class="kpi k-ingreso">
-      <div class="kpi-label">% de Activos en Renta</div>
-      <div class="kpi-value">${pctRentados.toFixed(0)}%</div>
-      <div class="kpi-delta flat">${rentadas} de ${rows.length} activos</div>
+      <div class="kpi-label">${unSoloActivo ? '¿Está en Renta?' : '% de Activos en Renta'}</div>
+      <div class="kpi-value">${cardRenta.valor}</div>
+      <div class="kpi-delta flat">${cardRenta.nota}</div>
     </div>
     <div class="kpi k-margen">
       <div class="kpi-label">ROI real anualizado</div>
@@ -4152,7 +4158,7 @@ function renderActivosVinculados(){
   if(!table) return;
 
   let rows = getAllData().filter(r => r.activo && r.activo.trim() !== '');
-  rows = rows.filter(r => empresaEnFiltro(r.empresa));
+  rows = rows.filter(r => empresaEnFiltro(r.empresa) && (state.activosFiltro.length === 0 || state.activosFiltro.includes(r.activo)));
 
   if(rows.length === 0){
     table.innerHTML = `<tr><td class="capture-log-empty">Todavía no hay movimientos con la columna "Activo" llenada${state.empresas.length ? ' para ' + state.empresas.join(', ') : ''}.</td></tr>`;
@@ -4306,7 +4312,7 @@ function renderFinanciamiento(){
 
   const EMPRESAS = getEmpresas();
   const empresas = state.empresas.length ? state.empresas.filter(e=>EMPRESAS.includes(e)) : EMPRESAS;
-  const lecturas = empresas.map(calcularDosLecturas).filter(l => l.ingOp || l.egrOp || l.ingInv || l.egrInv);
+  const lecturas = empresas.map(calcularDosLecturas).filter(l => l.ingInv !== 0 || l.egrInv !== 0);
 
   if(lecturas.length === 0){
     table.innerHTML = `<tbody><tr><td class="capture-log-empty">Sin movimientos para este filtro.</td></tr></tbody>`;
@@ -4376,7 +4382,10 @@ function renderFinanciamiento(){
 //    acumulado y mismo punto de referencia de la sección "Flujo de caja acumulado" de Flujos)
 // La TABLA siempre muestra el detalle completo (utilidad del mes + flujo acumulado + resultado).
 // El TOGGLE solo cambia qué muestra la GRÁFICA: "Solo utilidad del mes" vs "+ Flujo acumulado".
-const coberturaState = { modo: 'mes' };
+// 'mes' = solo el último mes registrado (default, sin filtros explícitos); 'acumuladoAnio' =
+// acumulado del año vigente (activado con el botón). Se ignora en cuanto haya un filtro
+// explícito de Año/Mes/Activo — ahí la gráfica respeta ese filtro directo.
+const coberturaVistaState = { modo: 'mes' };
 let chartCobertura = null;
 let ultimaCoberturaFilas = [];
 
@@ -4421,7 +4430,7 @@ function calcularCoberturaHistorica(empresa){
   const ancla = getAncla(empresa);
   const flujoAcumuladoPorPeriodo = calcularAcumulado(periodos, rowsEmp, ancla);
 
-  const activosEmp = liveActivosData.filter(a => a.empresa === empresa && a.pago_recurrente > 0);
+  const activosEmp = liveActivosData.filter(a => a.empresa === empresa && a.pago_recurrente > 0 && (state.activosFiltro.length === 0 || state.activosFiltro.includes(a.activo)));
   const filas = [];
 
   periodos.forEach((p, idx) => {
@@ -4515,48 +4524,56 @@ function renderCoberturaTabla(filas){
   table.innerHTML = html;
 }
 
+// Valor ordenable de un periodo (año*12 + índice de mes) para comparar entre empresas distintas
+// sin depender de idxPeriodo (que es relativo a cada empresa, no comparable entre sí).
+function ordenPeriodoCobertura(f){
+  return parseInt(f.anio,10)*12 + MESES_ORDEN.indexOf(f.mes);
+}
+
 function renderCoberturaChart(filas){
   const ctx = document.getElementById('chart-cobertura');
   if(!ctx) return;
   if(chartCobertura){ chartCobertura.destroy(); chartCobertura = null; }
   if(!filas || filas.length === 0) return;
 
-  // La gráfica resume los últimos periodos (para que no se sature con años de historial).
-  const recientes = filas.slice(0, 30).slice().reverse();
-  const VERDE = '#00875f', AMARILLO = '#c99a00', ROJO = '#e0203c', ROJO_CLARO = 'rgba(224,32,60,0.22)';
-
-  const labels = recientes.map(f => f.periodoLabel + ' · ' + f.empresa + ' · ' + f.activo);
-  let base, baseColor, sombraValor;
-
-  if(coberturaState.modo === 'mes'){
-    // Solo lo que la utilidad de ESE mes alcanza a cubrir — sin tocar el flujo acumulado.
-    base = recientes.map(f => f.deUtilidad);
-    baseColor = recientes.map(f => f.deUtilidad >= f.pago - 0.01 ? VERDE : ROJO);
-    sombraValor = recientes.map(f => Math.max(0, f.pago - f.deUtilidad));
+  // Si ya hay un filtro explícito de Año, Mes o Activo puesto arriba, la gráfica respeta eso
+  // directo (todas las filas ya vienen acotadas por renderCoberturaActivos/calcularCoberturaHistorica).
+  // Sin ningún filtro de esos, por default solo se ve el ÚLTIMO mes registrado — o, con el botón
+  // activado, el acumulado del año vigente (enero hasta el último mes con datos de ese año).
+  const hayFiltroExplicito = state.meses.length > 0 || state.anios.length > 0 || state.activosFiltro.length > 0;
+  let recientes;
+  if(hayFiltroExplicito){
+    recientes = filas.slice(0, 40).slice().reverse();
   } else {
-    // Utilidad del mes + lo que se completó con flujo acumulado.
-    base = recientes.map(f => f.cubierto);
-    baseColor = recientes.map(f => f.fuente === 'INSUFICIENTE' ? ROJO : (f.fuente === 'FLUJO ACUMULADO' ? AMARILLO : VERDE));
-    sombraValor = recientes.map(f => f.faltante);
+    const masReciente = filas.reduce((best,f) => (!best || ordenPeriodoCobertura(f) > ordenPeriodoCobertura(best)) ? f : best, null);
+    if(coberturaVistaState.modo === 'acumuladoAnio'){
+      recientes = filas.filter(f => f.anio === masReciente.anio).slice().reverse();
+    } else {
+      recientes = filas.filter(f => f.anio === masReciente.anio && f.mes === masReciente.mes).slice().reverse();
+    }
   }
-  const sombraColor = recientes.map(() => ROJO_CLARO);
+  if(recientes.length === 0) return;
+
+  const VERDE = '#00875f', AMARILLO = '#c99a00', ROJO_CLARO = 'rgba(224,32,60,0.4)';
+  const labels = recientes.map(f => f.periodoLabel + ' · ' + f.empresa + ' · ' + f.activo);
 
   chartCobertura = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label:'Cubierto', data: base, backgroundColor: baseColor, borderWidth:0, stack:'s' },
-        { label:'Faltante', data: sombraValor, backgroundColor: sombraColor, borderWidth:0, stack:'s' },
+        { label:'Cubierto con utilidad', data: recientes.map(f=>f.deUtilidad), backgroundColor: VERDE, borderWidth:0, stack:'s' },
+        { label:'Cubierto con flujo acumulado', data: recientes.map(f=>f.deFlujo), backgroundColor: AMARILLO, borderWidth:0, stack:'s' },
+        { label:'No se alcanzó a cubrir', data: recientes.map(f=>f.faltante), backgroundColor: ROJO_CLARO, borderWidth:0, stack:'s' },
       ]
     },
     options:{
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
       plugins:{
-        legend:{ display:false },
+        legend:{ position:'bottom', labels:{ color:'#5a5a66', font:{family:'Inter', size:11}, boxWidth:10, padding:8 } },
         tooltip:{ backgroundColor:'#ffffff', borderColor:'rgba(30,26,20,0.16)', borderWidth:1, titleColor:'#15151a', bodyColor:'#15151a', padding:8,
-          callbacks:{ label:(ctx)=> `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` } }
+          callbacks:{ label:(ctx)=> ctx.parsed.y > 0.01 ? `${ctx.dataset.label}: ${fmtMoney(ctx.parsed.y)}` : null } }
       },
       scales:{
         x:{ stacked:true, grid:{ display:false }, ticks:{ color:'#5a5a66', font:{family:'IBM Plex Mono', size:9}, maxRotation:60, minRotation:60 } },
@@ -4566,17 +4583,17 @@ function renderCoberturaChart(filas){
   });
 }
 
-function initCoberturaToggle(){
-  document.querySelectorAll('#cobertura-toggle button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('#cobertura-toggle button').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      coberturaState.modo = btn.dataset.modo;
-      renderCoberturaChart(ultimaCoberturaFilas); // solo redibuja la gráfica, la tabla no cambia
-    });
+function initCoberturaVistaBtn(){
+  const btn = document.querySelector('#cobertura-vista-btn button');
+  if(!btn) return;
+  btn.addEventListener('click', ()=>{
+    coberturaVistaState.modo = coberturaVistaState.modo === 'acumuladoAnio' ? 'mes' : 'acumuladoAnio';
+    btn.classList.toggle('active', coberturaVistaState.modo === 'acumuladoAnio');
+    btn.textContent = coberturaVistaState.modo === 'acumuladoAnio' ? 'Ver solo el mes vigente' : 'Ver acumulado del año';
+    renderCoberturaChart(ultimaCoberturaFilas); // solo redibuja la gráfica, la tabla no cambia
   });
 }
-initCoberturaToggle();
+initCoberturaVistaBtn();
 
 // ===================== MASTER RENDER (Activos) =====================
 function renderActivos(){
