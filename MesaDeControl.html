@@ -186,6 +186,20 @@ body{
 .reset-btn:hover{ color: var(--rose); border-color: var(--rose); }
 
 /* ===== GLOBAL FILTER BAR (fija arriba de las 5 pestañas) ===== */
+.btn-regresar{
+  position: fixed; bottom: 26px; right: 26px; z-index: 200;
+  display:flex; align-items:center; gap:7px;
+  font-family: var(--sans); font-size: 13px; font-weight:600; color:#ffffff;
+  background: var(--copper-bright); border: none; border-radius: 22px;
+  padding: 12px 20px 12px 16px; cursor:pointer;
+  box-shadow: 0 6px 20px rgba(13,122,69,0.4);
+  transition: transform .12s ease, box-shadow .12s ease;
+  animation: btnRegresarAparece .2s ease;
+}
+.btn-regresar:hover{ transform: translateY(-2px); box-shadow: 0 8px 24px rgba(13,122,69,0.48); }
+.btn-regresar-flecha{ font-size:16px; line-height:1; }
+@keyframes btnRegresarAparece{ from{ opacity:0; transform: translateY(8px); } to{ opacity:1; transform: translateY(0); } }
+
 .global-filterbar{
   position: sticky; top: 0; z-index: 80;
   display:flex; flex-wrap:wrap; gap: 10px; align-items:center;
@@ -526,6 +540,11 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <button class="tab-btn" data-tab="activos">Activos</button>
     <button class="tab-btn" data-tab="movimientos">Movimientos</button>
   </div>
+
+  <!-- BOTÓN FLOTANTE: REGRESAR — aparece solo tras saltar desde una gráfica a otro punto del sistema -->
+  <button id="btn-regresar" class="btn-regresar" style="display:none;" onclick="regresarAntesDeSalto()">
+    <span class="btn-regresar-flecha">←</span> <span id="btn-regresar-texto">Regresar</span>
+  </button>
 
   <!-- FILTRO GLOBAL — fijo arriba de las 5 pestañas, gobierna todo el panel -->
   <div class="global-filterbar" id="global-filterbar">
@@ -1779,6 +1798,7 @@ function initFiltroGlobal(){
   });
 
   document.getElementById('reset-btn').addEventListener('click', ()=>{
+    ocultarBotonRegresar();
     state.empresas = []; state.meses = []; state.anios = []; state.modoActivos = 'todo'; state.activosFiltro = [];
     document.querySelectorAll('#modo-activos-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.modo==='todo'));
     ocultarDetalleActivo();
@@ -5304,6 +5324,39 @@ function renderCurrentTab(){
   else if(currentTab === 'flujo-efectivo') renderFlujoEfectivo();
 }
 
+// ===================== BOTÓN "REGRESAR" (tras saltar desde una gráfica) =====================
+const NOMBRES_TAB = { flujos:'General', 'estado-resultados':'Estado de Resultados', 'flujo-efectivo':'Flujo de Efectivo', activos:'Activos', movimientos:'Movimientos' };
+let estadoAntesDeSalto = null;
+
+// Se llama justo antes de saltar de pestaña por un clic en una gráfica — guarda en qué
+// pestaña estabas y cómo tenías puestos los filtros, para poder regresar exacto.
+function guardarEstadoAntesDeSalto(){
+  estadoAntesDeSalto = { tab: currentTab, state: JSON.parse(JSON.stringify(state)) };
+  const btn = document.getElementById('btn-regresar');
+  const texto = document.getElementById('btn-regresar-texto');
+  if(texto) texto.textContent = 'Regresar a ' + (NOMBRES_TAB[currentTab] || currentTab);
+  if(btn) btn.style.display = 'flex';
+}
+
+// Se llama al navegar manualmente por la barra de pestañas — si venías de un salto, ya no
+// aplica regresar a ningún lado (el usuario decidió moverse por su cuenta).
+function ocultarBotonRegresar(){
+  const btn = document.getElementById('btn-regresar');
+  if(btn) btn.style.display = 'none';
+  estadoAntesDeSalto = null;
+}
+
+function regresarAntesDeSalto(){
+  if(!estadoAntesDeSalto) return;
+  const destino = estadoAntesDeSalto;
+  estadoAntesDeSalto = null;
+  document.getElementById('btn-regresar').style.display = 'none';
+  Object.keys(state).forEach(k => delete state[k]);
+  Object.assign(state, destino.state);
+  refrescarBotonesFiltroGlobal();
+  switchToTab(destino.tab);
+}
+
 function switchToTab(tabName){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab === tabName));
   currentTab = tabName;
@@ -5317,13 +5370,17 @@ function switchToTab(tabName){
 
 function initTabs(){
   document.querySelectorAll('.tab-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=> switchToTab(btn.dataset.tab));
+    btn.addEventListener('click', ()=>{
+      ocultarBotonRegresar(); // navegación manual: ya no aplica "regresar" a ningún salto previo
+      switchToTab(btn.dataset.tab);
+    });
   });
 }
 
 // Llamado desde los pie charts de Flujos: lleva a la pestaña Movimientos ya
 // filtrada por la empresa/categoría/tipo de movimiento en la que se hizo clic.
 function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, anio, activo, soloOperativo }){
+  guardarEstadoAntesDeSalto(); // para poder regresar exacto a donde estabas con el botón flotante
   movsState.search = '';
   movsState.categoria = categoria || '';
   movsState.tipoMov = tipoMov || '';
