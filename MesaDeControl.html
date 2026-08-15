@@ -189,6 +189,23 @@ body{
 
 /* ===== KPI ROW ===== */
 .kpi-row{ display:grid; grid-template-columns: repeat(4, 1fr); gap:14px; margin-bottom: 28px; }
+.er-hero{
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  padding: 28px 32px; margin-bottom: 28px; box-shadow: 0 1px 3px rgba(30,26,20,0.04);
+}
+.er-hero-label{ font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--paper-faint); }
+.er-hero-row{ display:flex; align-items:baseline; gap:22px; flex-wrap:wrap; margin-top:8px; }
+.er-hero-value{ font-family:var(--serif); font-size:52px; font-weight:600; letter-spacing:-0.02em; color:var(--paper); line-height:1; }
+.er-hero-value.neg{ color:var(--rose); }
+.er-hero-pct{ font-family:var(--mono); font-size:20px; font-weight:600; color:var(--copper-bright); }
+.er-hero-pct.neg{ color:var(--rose); }
+.kpi-row-margenes{ grid-template-columns: repeat(5, 1fr); }
+.kpi.k-ratio{ cursor:pointer; transition: box-shadow .15s ease, border-color .15s ease; }
+.kpi.k-ratio:hover{ box-shadow: 0 2px 8px rgba(30,26,20,0.09); }
+.kpi.k-ratio.activo{ border-color: var(--copper-bright); box-shadow: 0 0 0 2px rgba(204,78,10,0.15); }
+.kpi.k-ratio::before{ background: var(--copper-bright); }
+#er-table tr.er-row-highlight td{ background: rgba(204,78,10,0.09); font-weight:700; }
+#er-table tr.er-row-highlight td:first-child{ color: var(--copper-bright); }
 .kpi{
   background: var(--panel);
   border: 1px solid var(--line);
@@ -777,18 +794,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       </div>
     </section>
 
-    <!-- OPERATIVO VS INVERSION -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Negocio vs. capital</div>
-          <div class="section-title">Utilidad operativa vs. movimiento de inversión</div>
-        </div>
-        <div class="section-note">Separa el desempeño normal del negocio de las inversiones de capital del grupo (terrenos, bodegas, locales...), según la clasificación que mantienes en la hoja Activos.</div>
-      </div>
-      <div class="grid-2-even" id="op-inv-grid-fe"></div>
-    </section>
-
     <!-- TENDENCIA ACUMULADA POR LINEA DE NEGOCIO -->
     <section class="section">
       <div class="section-head">
@@ -803,25 +808,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       </div>
       <div class="panel">
         <canvas id="chart-tendencia-categoria-acum" height="100"></canvas>
-      </div>
-    </section>
-
-    <!-- COMPANY COMPARISON -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Comparación horizontal</div>
-          <div class="section-title">Empresas, cara a cara</div>
-        </div>
-        <div class="section-note">Quién aporta más ingreso, quién pesa más en egreso, y el margen resultante de cada unidad.</div>
-      </div>
-      <div class="grid-2">
-        <div class="panel">
-          <canvas id="chart-empresas-fe" height="110"></canvas>
-        </div>
-        <div class="panel">
-          <div class="rank-list" id="rank-margen-fe"></div>
-        </div>
       </div>
     </section>
 
@@ -868,23 +854,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       </div>
     </section>
 
-    <!-- INCREMENTOS / DECREMENTOS -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Variación mes a mes</div>
-          <div class="section-title">Quién subió, quién bajó</div>
-        </div>
-        <div class="section-note">Compara el último mes con datos contra el inmediato anterior, por empresa (cada una con su propio corte disponible).</div>
-      </div>
-      <div class="panel">
-        <table id="table-variacion-fe">
-          <thead><tr><th>Empresa</th><th>Mes anterior</th><th>Mes actual</th><th>Variación</th><th>%</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-
     <!-- TOP CLIENTS / RAZON SOCIAL -->
     <section class="section">
       <div class="section-head">
@@ -904,18 +873,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
           <div class="rank-list" id="rank-egresos-fe"></div>
         </div>
       </div>
-    </section>
-
-    <!-- COMPOSITION -->
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="section-eyebrow">Composición</div>
-          <div class="section-title">De qué vive cada empresa</div>
-        </div>
-        <div class="section-note">Participación de cada línea de negocio dentro del ingreso total de la unidad.</div>
-      </div>
-      <div class="grid-3" id="composition-grid-fe"></div>
     </section>
 
   </div>
@@ -1129,6 +1086,10 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 
   <!-- ESTADO DE RESULTADOS -->
   <div class="tab-panel" id="tab-estado-resultados" style="display:none;">
+
+    <!-- HERO: UTILIDAD DEL PERIODO -->
+    <div class="er-hero" id="er-hero"></div>
+
     <section class="section">
       <div class="section-head">
         <div>
@@ -1159,6 +1120,77 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       <div class="panel pivot-wrap">
         <table class="pivot" id="er-table"></table>
       </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Rentabilidad</div>
+          <div class="section-title">Márgenes y ratios</div>
+        </div>
+        <div class="section-note">Del último mes con datos según tus filtros de arriba (se mueve solo si cambias Año/Mes/Empresa). Da clic en cualquiera para resaltar de qué líneas del Estado de Resultados sale.</div>
+      </div>
+      <div class="kpi-row kpi-row-margenes" id="er-margenes-row"></div>
+    </section>
+
+    <!-- OPERATIVO VS INVERSION (movida de Flujo de Efectivo) -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Negocio vs. capital</div>
+          <div class="section-title">Utilidad operativa vs. movimiento de inversión</div>
+        </div>
+        <div class="section-note">Separa el desempeño normal del negocio de las inversiones de capital del grupo (terrenos, bodegas, locales...), según la clasificación que mantienes en la hoja Activos.</div>
+      </div>
+      <div class="grid-2-even" id="op-inv-grid-er"></div>
+    </section>
+
+    <!-- COMPANY COMPARISON (movida de Flujo de Efectivo) -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Comparación horizontal</div>
+          <div class="section-title">Empresas, cara a cara</div>
+        </div>
+        <div class="section-note">Quién aporta más ingreso, quién pesa más en egreso, y el margen resultante de cada unidad.</div>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <canvas id="chart-empresas-er" height="110"></canvas>
+        </div>
+        <div class="panel">
+          <div class="rank-list" id="rank-margen-er"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INCREMENTOS / DECREMENTOS (movida de Flujo de Efectivo) -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Variación mes a mes</div>
+          <div class="section-title">Quién subió, quién bajó</div>
+        </div>
+        <div class="section-note">Compara el último mes con datos contra el inmediato anterior, por empresa (cada una con su propio corte disponible).</div>
+      </div>
+      <div class="panel">
+        <table id="table-variacion-er">
+          <thead><tr><th>Empresa</th><th>Mes anterior</th><th>Mes actual</th><th>Variación</th><th>%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- COMPOSITION (movida de Flujo de Efectivo) -->
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Composición</div>
+          <div class="section-title">De qué vive cada empresa</div>
+        </div>
+        <div class="section-note">Participación de cada línea de negocio dentro del ingreso total de la unidad.</div>
+      </div>
+      <div class="grid-3" id="composition-grid-er"></div>
     </section>
   </div>
 
@@ -1867,8 +1899,8 @@ function renderKPIs(){
 // ===================== OPERATIVO VS INVERSIÓN =====================
 function renderOperativoVsInversion(){
   const grid = document.getElementById('op-inv-grid');
-  const gridFE = document.getElementById('op-inv-grid-fe');
-  if(!grid && !gridFE) return;
+  const gridER = document.getElementById('op-inv-grid-er');
+  if(!grid && !gridER) return;
   const rows = getFiltered();
 
   const operativo = rows.filter(r => !esInversion(r));
@@ -1905,7 +1937,7 @@ function renderOperativoVsInversion(){
     </div>
   `;
   if(grid) grid.innerHTML = html;
-  if(gridFE) gridFE.innerHTML = html;
+  if(gridER) gridER.innerHTML = html;
 }
 
 // ===================== EVOLUTION CHART =====================
@@ -2519,6 +2551,7 @@ function calcularLineasER(rows){
 }
 
 function renderEstadoResultados(){
+  renderERHero();
   renderEvolucion('chart-evolucion-er');
   const table = document.getElementById('er-table');
   const baseRows = excluirActivosSiAplica(getAllData()).filter(d =>
@@ -2557,13 +2590,141 @@ function renderEstadoResultados(){
 
   let html = '<tr><th>Concepto</th>' + columnas.map(c => `<th class="er-table-header-mes">${c.label}</th>`).join('') + '</tr>';
   filas.forEach(f => {
-    html += `<tr class="${f.clase}"><td>${f.label}</td>` + columnas.map(c => {
+    html += `<tr class="${f.clase}" data-key="${f.key}"><td>${f.label}</td>` + columnas.map(c => {
       const v = c.lineas[f.key];
       const esNeg = (f.key === 'utilidadNeta' || f.key === 'utilidadBruta' || f.key === 'utilidadOperativa' || f.key === 'resultadoFinal') && v < 0;
       return `<td class="${esNeg ? 'neg' : ''}">${fmtMoney(v)}</td>`;
     }).join('') + '</tr>';
   });
   table.innerHTML = html;
+  renderERMargenes();
+  renderOperativoVsInversion();
+  renderEmpresasChart();
+  renderVariacion();
+  renderComposition();
+}
+
+// ===================== MÁRGENES Y RATIOS (debajo del Estado de Resultados) =====================
+// Mismo criterio de "último mes" que usan las tarjetas de arriba (Ingreso/Egreso/Utilidad):
+// con una sola empresa filtrada, su último mes con datos; con varias o ninguna, el último mes
+// en que TODAS las empresas relevantes ya tienen movimientos capturados.
+function elegirPeriodoActualGenerico(periodos){
+  if(state.meses.length === 1){
+    const candidatos = periodos.filter(p => p.mes === state.meses[0]);
+    return candidatos.length ? candidatos[candidatos.length-1] : null;
+  }
+  if(state.meses.length !== 0 || periodos.length === 0) return null;
+  if(state.empresas.length === 1) return periodos[periodos.length-1];
+  const empresasRelevantes = state.empresas.length ? state.empresas : getEmpresas();
+  for(let i = periodos.length - 1; i >= 0; i--){
+    const p = periodos[i];
+    const reportando = empresasReportandoEnMes(p.mes, p.anio);
+    if(empresasRelevantes.every(e => reportando.has(e))) return p;
+  }
+  return periodos[periodos.length-1];
+}
+
+const RATIOS_ER = [
+  { id:'bruto', label:'Margen Bruto', key:'margenBruto', lineas:['ingreso','costos','utilidadBruta'] },
+  { id:'operativo', label:'Margen Operativo', key:'margenOperativo', lineas:['utilidadBruta','gastos','utilidadOperativa'] },
+  { id:'ebitda', label:'EBITDA (aprox.)', key:'margenEbitda', lineas:['utilidadBruta','gastos','utilidadOperativa'] },
+  { id:'neto', label:'Margen Neto', key:'margenNeto', lineas:['utilidadOperativa','impuestos','utilidadNeta'] },
+  { id:'opex', label:'Ratio de Gastos OPEX', key:'ratioOpex', lineas:['ingreso','gastos'] },
+];
+let ratioActivo = null;
+
+function calcularMargenesYRatios(){
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d =>
+    empresaEnFiltro(d.empresa) && (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+  );
+  const periodos = getPeriodosOrdenados(baseRows);
+  const periodo = elegirPeriodoActualGenerico(periodos);
+  if(!periodo) return null;
+  const rowsPeriodo = baseRows.filter(r => r.mes === periodo.mes && getAnioDeFila(r) === periodo.anio);
+  const l = calcularLineasER(rowsPeriodo);
+  const pct = (num) => l.ingreso !== 0 ? (num/l.ingreso*100) : 0;
+  return {
+    periodo,
+    margenBruto: pct(l.utilidadBruta),
+    margenOperativo: pct(l.utilidadOperativa),
+    margenEbitda: pct(l.utilidadOperativa), // aproximado: este modelo no separa Depreciación/Amortización
+    margenNeto: pct(l.utilidadNeta),
+    ratioOpex: pct(l.gastos),
+  };
+}
+
+function resaltarLineasER(lineas){
+  document.querySelectorAll('#er-table tr').forEach(tr => tr.classList.remove('er-row-highlight'));
+  if(!lineas) return;
+  lineas.forEach(key => {
+    const tr = document.querySelector(`#er-table tr[data-key="${key}"]`);
+    if(tr) tr.classList.add('er-row-highlight');
+  });
+}
+
+// Utilidad neta del periodo actual, en grande, arriba de toda la pestaña — mismo criterio de
+// "último mes" que el resto de esta pestaña, se mueve solo si cambian los filtros de arriba.
+function renderERHero(){
+  const cont = document.getElementById('er-hero');
+  if(!cont) return;
+  const baseRows = excluirActivosSiAplica(getAllData()).filter(d =>
+    empresaEnFiltro(d.empresa) && (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+  );
+  const periodos = getPeriodosOrdenados(baseRows);
+  const periodo = elegirPeriodoActualGenerico(periodos);
+  if(!periodo){
+    cont.innerHTML = '<div class="empty-note">Sin datos para este filtro.</div>';
+    return;
+  }
+  const rowsPeriodo = baseRows.filter(r => r.mes === periodo.mes && getAnioDeFila(r) === periodo.anio);
+  const l = calcularLineasER(rowsPeriodo);
+  const margenNeto = l.ingreso !== 0 ? (l.utilidadNeta/l.ingreso*100) : 0;
+  cont.innerHTML = `
+    <div class="er-hero-label">Utilidad neta — ${periodo.mes} ${periodo.anio}</div>
+    <div class="er-hero-row">
+      <div class="er-hero-value ${l.utilidadNeta<0?'neg':''}">${fmtMoney(l.utilidadNeta)}</div>
+      <div class="er-hero-pct ${margenNeto<0?'neg':''}">${margenNeto.toFixed(1)}% del ingreso total</div>
+    </div>
+  `;
+}
+
+function renderERMargenes(){
+  const cont = document.getElementById('er-margenes-row');
+  if(!cont) return;
+  const datos = calcularMargenesYRatios();
+  if(!datos){
+    cont.innerHTML = '<div class="empty-note">Sin datos suficientes para calcular márgenes con este filtro.</div>';
+    return;
+  }
+  const refMesTxt = datos.periodo.mes + ' ' + datos.periodo.anio;
+  cont.innerHTML = RATIOS_ER.map(r => {
+    const v = datos[r.key];
+    return `<div class="kpi k-ratio ${ratioActivo===r.id?'activo':''}" data-ratio="${r.id}">
+      <div class="kpi-label">${r.label} <span class="kpi-ref-mes">${refMesTxt}</span></div>
+      <div class="kpi-value ${v<0?'neg':''}">${v.toFixed(1)}%</div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.kpi').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const id = el.dataset.ratio;
+      const r = RATIOS_ER.find(x=>x.id===id);
+      if(ratioActivo === id){
+        ratioActivo = null;
+        resaltarLineasER(null);
+      } else {
+        ratioActivo = id;
+        resaltarLineasER(r.lineas);
+      }
+      cont.querySelectorAll('.kpi').forEach(k => k.classList.toggle('activo', k.dataset.ratio === ratioActivo));
+    });
+  });
+
+  // Si ya había un ratio activo (p.ej. tras cambiar el filtro), mantiene el resaltado.
+  if(ratioActivo){
+    const r = RATIOS_ER.find(x=>x.id===ratioActivo);
+    if(r) resaltarLineasER(r.lineas);
+  }
 }
 
 function initERToggle(){
@@ -2871,7 +3032,7 @@ function renderEmpresasChartCore(canvasId, rankId, chartKey){
 }
 function renderEmpresasChart(){
   renderEmpresasChartCore('chart-empresas', 'rank-margen', 'empresas');
-  renderEmpresasChartCore('chart-empresas-fe', 'rank-margen-fe', 'empresasFE');
+  renderEmpresasChartCore('chart-empresas-er', 'rank-margen-er', 'empresasER');
 }
 
 function displayCategoria(t){
@@ -3140,9 +3301,9 @@ function renderVariacion(){
     </tr>`;
   });
   const tbody = document.querySelector('#table-variacion tbody');
-  const tbodyFE = document.querySelector('#table-variacion-fe tbody');
+  const tbodyER = document.querySelector('#table-variacion-er tbody');
   if(tbody) tbody.innerHTML = html;
-  if(tbodyFE) tbodyFE.innerHTML = html;
+  if(tbodyER) tbodyER.innerHTML = html;
 }
 
 // ===================== TOP CLIENTS / COUNTERPARTIES =====================
@@ -3250,7 +3411,7 @@ function renderComposition(){
   compositionCharts.forEach(c=>c.destroy());
   compositionCharts = [];
   renderCompositionInto('composition-grid', 'comp-');
-  renderCompositionInto('composition-grid-fe', 'comp-fe-');
+  renderCompositionInto('composition-grid-er', 'comp-er-');
 }
 
 // ===================== MASTHEAD META =====================
@@ -3449,15 +3610,11 @@ function renderFlujoEfectivo(){
   renderEvolucionAcumulada();
   renderAcumulado();
   renderPieChartsFE();
-  renderOperativoVsInversion();
   renderTendenciaAcumulada();
-  renderEmpresasChart();
   renderResumenEmpresas();
   renderPivotMesChips();
   renderPivot();
-  renderVariacion();
   renderRankings();
-  renderComposition();
 }
 
 </script>
