@@ -229,6 +229,7 @@ body{
 .er-hero-pct{ font-family:var(--mono); font-size:20px; font-weight:600; color:var(--copper-bright); }
 .er-hero-pct.neg{ color:var(--rose); }
 .kpi-row-margenes{ grid-template-columns: repeat(5, 1fr); }
+.kpi-row-3{ grid-template-columns: repeat(3, 1fr); margin-bottom:18px; }
 .kpi.k-ratio{ cursor:pointer; transition: box-shadow .15s ease, border-color .15s ease; }
 .kpi.k-ratio:hover{ box-shadow: 0 2px 8px rgba(30,26,20,0.09); }
 .kpi.k-ratio.activo{ border-color: var(--copper-bright); box-shadow: 0 0 0 2px rgba(204,78,10,0.15); }
@@ -1060,8 +1061,9 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
       </div>
       <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;" id="cobertura-nota">
-        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. Cada barra se apila mostrando qué proporción se cubrió con utilidad, con flujo acumulado, y qué proporción faltó. Sin filtros arriba, se muestra solo el último mes registrado — usa el botón para ver el acumulado del año vigente. Si eliges Año, Mes o Activo arriba, la gráfica respeta ese filtro directo.
+        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. Cada barra se apila mostrando qué proporción se cubrió con utilidad, con flujo acumulado, y qué proporción faltó — la tabla de abajo siempre muestra exactamente lo mismo que la gráfica. Sin filtros arriba, se muestra solo el último mes registrado — usa el botón para ver el acumulado del año vigente. Si eliges Año, Mes o Activo arriba, la gráfica respeta ese filtro directo.
       </div>
+      <div class="kpi-row kpi-row-3" id="cobertura-kpi-row"></div>
       <div class="panel">
         <canvas id="chart-cobertura" height="110"></canvas>
       </div>
@@ -4495,6 +4497,7 @@ function renderCoberturaActivos(){
   filas.sort((a,b) => (a.empresa < b.empresa ? -1 : a.empresa > b.empresa ? 1 : (b.anio - a.anio) || (b.idxPeriodo - a.idxPeriodo)));
 
   ultimaCoberturaFilas = filas;
+  renderCoberturaKPIs(obtenerVistaCobertura(filas).recientes);
   renderCoberturaTabla(filas);
   renderCoberturaChart(filas);
 }
@@ -4502,32 +4505,56 @@ function renderCoberturaActivos(){
 function renderCoberturaTabla(filas){
   const table = document.getElementById('cobertura-table');
   if(!table) return;
-  if(filas.length === 0){
+
+  const { datos, usaAgregacion, modoAgregacion } = obtenerVistaCobertura(filas);
+  if(datos.length === 0){
     table.innerHTML = '<tr><td class="capture-log-empty">No hay activos con pago programado que caiga en algún mes de tu historial (revisa Periodicidad / Mes de pago en la hoja Activos, o los filtros de arriba).</td></tr>';
     return;
   }
 
-  let html = '<tr><th>Mes</th><th>Empresa</th><th>Activo</th><th>Pago</th><th>Utilidad del mes</th><th>De flujo acumulado</th><th>Resultado</th></tr>';
-  let grupoAnterior = null;
-  filas.forEach(f => {
-    const grupo = f.empresa + '|' + f.periodoLabel;
-    const nuevoGrupo = grupo !== grupoAnterior;
-    grupoAnterior = grupo;
+  if(!usaAgregacion){
+    // Detalle: un pago individual por fila — igual que antes.
+    let html = '<tr><th>Mes</th><th>Empresa</th><th>Activo</th><th>Pago</th><th>Utilidad del mes</th><th>De flujo acumulado</th><th>Resultado</th></tr>';
+    let grupoAnterior = null;
+    datos.forEach(f => {
+      const grupo = f.empresa + '|' + f.periodoLabel;
+      const nuevoGrupo = grupo !== grupoAnterior;
+      grupoAnterior = grupo;
 
-    const ok = f.fuente !== 'INSUFICIENTE';
-    const cls = ok ? '' : 'neg';
-    const icono = f.fuente === 'INSUFICIENTE' ? '❌' : (f.fuente === 'FLUJO ACUMULADO' ? '🟡' : '✅');
-    const resultadoTxt = f.fuente === 'FLUJO ACUMULADO'
-      ? 'Cubierto con flujo acumulado'
-      : (f.fuente === 'INSUFICIENTE' ? 'INSUFICIENTE' : 'Cubierto con utilidad del mes');
-    html += `<tr class="subtotal${nuevoGrupo ? ' divisor-mes' : ''}">
-      <td>${f.periodoLabel}</td>
-      <td>${f.empresa}</td>
-      <td>${f.activo}</td>
+      const ok = f.fuente !== 'INSUFICIENTE';
+      const cls = ok ? '' : 'neg';
+      const icono = f.fuente === 'INSUFICIENTE' ? '❌' : (f.fuente === 'FLUJO ACUMULADO' ? '🟡' : '✅');
+      const resultadoTxt = f.fuente === 'FLUJO ACUMULADO'
+        ? 'Cubierto con flujo acumulado'
+        : (f.fuente === 'INSUFICIENTE' ? 'INSUFICIENTE' : 'Cubierto con utilidad del mes');
+      html += `<tr class="subtotal${nuevoGrupo ? ' divisor-mes' : ''}">
+        <td>${f.periodoLabel}</td>
+        <td>${f.empresa}</td>
+        <td>${f.activo}</td>
+        <td>${fmtMoney(f.pago)}</td>
+        <td>${fmtMoney(f.utilidadMes)}</td>
+        <td>${f.deFlujo > 0.01 ? fmtMoney(f.deFlujo) : '—'}</td>
+        <td class="${cls}">${icono} ${resultadoTxt}${f.faltante>0.01 ? ' ('+fmtMoney(f.faltante)+' faltante)' : ''}</td>
+      </tr>`;
+    });
+    table.innerHTML = html;
+    return;
+  }
+
+  // Agregado (por activo o por mes) — mismas 3 columnas de la gráfica, sumadas.
+  const primeraCol = modoAgregacion === 'porMes' ? 'Mes' : 'Activo';
+  let html = `<tr><th>${primeraCol}</th>${modoAgregacion==='porActivo' ? '<th>Empresa</th>' : ''}<th>Pago total</th><th>Cubierto con utilidad</th><th>Cubierto con flujo</th><th>Faltante</th><th>% cubierto</th></tr>`;
+  datos.forEach(f => {
+    const pct = f.pago > 0 ? (f.pago - f.faltante) / f.pago * 100 : 100;
+    const cls = f.faltante > 0.01 ? 'neg' : '';
+    html += `<tr class="subtotal">
+      <td>${modoAgregacion === 'porMes' ? f.periodoLabel : f.activo}</td>
+      ${modoAgregacion==='porActivo' ? `<td>${f.empresa}</td>` : ''}
       <td>${fmtMoney(f.pago)}</td>
-      <td>${fmtMoney(f.utilidadMes)}</td>
+      <td>${f.deUtilidad > 0.01 ? fmtMoney(f.deUtilidad) : '—'}</td>
       <td>${f.deFlujo > 0.01 ? fmtMoney(f.deFlujo) : '—'}</td>
-      <td class="${cls}">${icono} ${resultadoTxt}${f.faltante>0.01 ? ' ('+fmtMoney(f.faltante)+' faltante)' : ''}</td>
+      <td class="${cls}">${f.faltante > 0.01 ? fmtMoney(f.faltante) : '—'}</td>
+      <td class="${cls}">${pct.toFixed(0)}%</td>
     </tr>`;
   });
   table.innerHTML = html;
@@ -4537,6 +4564,80 @@ function renderCoberturaTabla(filas){
 // sin depender de idxPeriodo (que es relativo a cada empresa, no comparable entre sí).
 function ordenPeriodoCobertura(f){
   return parseInt(f.anio,10)*12 + MESES_ORDEN.indexOf(f.mes);
+}
+
+// Fuente única de verdad: decide qué filas/agregación se muestran, para que la tabla de abajo
+// SIEMPRE coincida exactamente con lo que dibuja la gráfica de arriba (mismos toggles/filtros).
+function obtenerVistaCobertura(filas){
+  if(!filas || filas.length === 0) return { datos: [], usaAgregacion: false, recientes: [] };
+
+  // Si ya hay un filtro explícito de Año, Mes o Activo puesto arriba, se respeta eso directo
+  // (todas las filas ya vienen acotadas por renderCoberturaActivos/calcularCoberturaHistorica).
+  // Sin ningún filtro de esos, por default solo se ve el ÚLTIMO mes registrado — o, con el botón
+  // activado, el acumulado del año vigente (enero hasta el último mes con datos de ese año).
+  const hayFiltroExplicito = state.meses.length > 0 || state.anios.length > 0 || state.activosFiltro.length > 0;
+  let recientes, esUnSoloMes;
+
+  if(hayFiltroExplicito){
+    recientes = filas.slice(0, 200);
+    esUnSoloMes = state.meses.length === 1;
+  } else {
+    const masReciente = filas.reduce((best,f) => (!best || ordenPeriodoCobertura(f) > ordenPeriodoCobertura(best)) ? f : best, null);
+    if(coberturaVistaState.modo === 'acumuladoAnio'){
+      recientes = filas.filter(f => f.anio === masReciente.anio);
+      esUnSoloMes = false;
+    } else {
+      recientes = filas.filter(f => f.anio === masReciente.anio && f.mes === masReciente.mes);
+      esUnSoloMes = true;
+    }
+  }
+  if(recientes.length === 0) return { datos: [], usaAgregacion: false, recientes: [] };
+
+  // El toggle Por activo/Por mes solo tiene sentido cuando hay más de un mes en pantalla a la
+  // vez — con un solo mes, cada barra/fila ya es un activo individual.
+  const usaAgregacion = !esUnSoloMes;
+  let datos;
+  if(!usaAgregacion){
+    datos = recientes.slice().reverse();
+  } else if(coberturaAgregacionState.modo === 'porMes'){
+    datos = agregarCoberturaPorMes(recientes);
+  } else {
+    datos = agregarCoberturaPorActivo(recientes);
+  }
+  return { datos, usaAgregacion, modoAgregacion: coberturaAgregacionState.modo, recientes };
+}
+
+// Cuenta cada pago individual (no agregado) según de dónde salió el dinero — se mantiene igual
+// sin importar si la gráfica está en modo "Por activo" o "Por mes" (esos son solo formas de
+// visualizar), pero sí cambia con el mes vigente / año acumulado / filtros de arriba.
+function renderCoberturaKPIs(recientes){
+  const cont = document.getElementById('cobertura-kpi-row');
+  if(!cont) return;
+  if(!recientes || recientes.length === 0){ cont.innerHTML = ''; return; }
+
+  const total = recientes.length;
+  const conUtilidad = recientes.filter(f => f.faltante <= 0.01 && f.deFlujo <= 0.01).length;
+  const conFlujo = recientes.filter(f => f.faltante <= 0.01 && f.deFlujo > 0.01).length;
+  const conFaltante = recientes.filter(f => f.faltante > 0.01).length;
+  const pct = (n) => total > 0 ? (n/total*100) : 0;
+
+  cont.innerHTML = `
+    <div class="kpi k-ingreso">
+      <div class="kpi-label">Pagados con Utilidad</div>
+      <div class="kpi-value">${pct(conUtilidad).toFixed(0)}%</div>
+      <div class="kpi-delta flat">${conUtilidad} de ${total} pago${total===1?'':'s'}</div>
+    </div>
+    <div class="kpi k-margen">
+      <div class="kpi-label">Pagados con Flujo Acumulado</div>
+      <div class="kpi-value">${pct(conFlujo).toFixed(0)}%</div>
+      <div class="kpi-delta flat">${conFlujo} de ${total} pago${total===1?'':'s'}</div>
+    </div>
+    <div class="kpi k-egreso">
+      <div class="kpi-label">Con Faltante</div>
+      <div class="kpi-value ${conFaltante>0?'neg':''}">${pct(conFaltante).toFixed(0)}%</div>
+      <div class="kpi-delta flat">${conFaltante} de ${total} pago${total===1?'':'s'}</div>
+    </div>
+  `;
 }
 
 // Suma todos los meses de un mismo activo en una sola fila (una barra por activo).
@@ -4576,44 +4677,10 @@ function renderCoberturaChart(filas){
   const togAgregacion = document.getElementById('cobertura-agregacion-toggle');
   if(!ctx) return;
   if(chartCobertura){ chartCobertura.destroy(); chartCobertura = null; }
-  if(!filas || filas.length === 0){ if(togAgregacion) togAgregacion.style.display = 'none'; return; }
 
-  // Si ya hay un filtro explícito de Año, Mes o Activo puesto arriba, la gráfica respeta eso
-  // directo (todas las filas ya vienen acotadas por renderCoberturaActivos/calcularCoberturaHistorica).
-  // Sin ningún filtro de esos, por default solo se ve el ÚLTIMO mes registrado — o, con el botón
-  // activado, el acumulado del año vigente (enero hasta el último mes con datos de ese año).
-  const hayFiltroExplicito = state.meses.length > 0 || state.anios.length > 0 || state.activosFiltro.length > 0;
-  let recientes;
-  let esUnSoloMes; // true = un único mes en pantalla (no tiene caso agrupar por activo/mes)
-
-  if(hayFiltroExplicito){
-    recientes = filas.slice(0, 200);
-    esUnSoloMes = state.meses.length === 1;
-  } else {
-    const masReciente = filas.reduce((best,f) => (!best || ordenPeriodoCobertura(f) > ordenPeriodoCobertura(best)) ? f : best, null);
-    if(coberturaVistaState.modo === 'acumuladoAnio'){
-      recientes = filas.filter(f => f.anio === masReciente.anio);
-      esUnSoloMes = false;
-    } else {
-      recientes = filas.filter(f => f.anio === masReciente.anio && f.mes === masReciente.mes);
-      esUnSoloMes = true;
-    }
-  }
-  if(recientes.length === 0){ if(togAgregacion) togAgregacion.style.display = 'none'; return; }
-
-  // El toggle Por activo/Por mes solo tiene sentido (y solo se muestra) cuando hay más de un
-  // mes en pantalla a la vez — con un solo mes, cada barra ya es un activo individual.
-  const usaAgregacion = !esUnSoloMes;
+  const { datos, usaAgregacion } = obtenerVistaCobertura(filas);
   if(togAgregacion) togAgregacion.style.display = usaAgregacion ? 'flex' : 'none';
-
-  let datos;
-  if(!usaAgregacion){
-    datos = recientes.slice().reverse();
-  } else if(coberturaAgregacionState.modo === 'porMes'){
-    datos = agregarCoberturaPorMes(recientes);
-  } else {
-    datos = agregarCoberturaPorActivo(recientes);
-  }
+  if(datos.length === 0) return;
 
   const VERDE = '#00875f', AMARILLO = '#c99a00', ROJO_CLARO = 'rgba(224,32,60,0.4)';
   const labels = datos.map(f => usaAgregacion ? f.periodoLabel : (f.periodoLabel + ' · ' + f.empresa + ' · ' + f.activo));
@@ -4651,6 +4718,7 @@ function initCoberturaAgregacionToggle(){
       btn.classList.add('active');
       coberturaAgregacionState.modo = btn.dataset.modo;
       renderCoberturaChart(ultimaCoberturaFilas);
+      renderCoberturaTabla(ultimaCoberturaFilas);
     });
   });
 }
@@ -4663,7 +4731,9 @@ function initCoberturaVistaBtn(){
     coberturaVistaState.modo = coberturaVistaState.modo === 'acumuladoAnio' ? 'mes' : 'acumuladoAnio';
     btn.classList.toggle('active', coberturaVistaState.modo === 'acumuladoAnio');
     btn.textContent = coberturaVistaState.modo === 'acumuladoAnio' ? 'Ver solo el mes vigente' : 'Ver acumulado del año';
-    renderCoberturaChart(ultimaCoberturaFilas); // solo redibuja la gráfica, la tabla no cambia
+    renderCoberturaKPIs(obtenerVistaCobertura(ultimaCoberturaFilas).recientes);
+    renderCoberturaChart(ultimaCoberturaFilas);
+    renderCoberturaTabla(ultimaCoberturaFilas); // la tabla ahora sí respeta lo que muestra la gráfica
   });
 }
 initCoberturaVistaBtn();
