@@ -4523,28 +4523,30 @@ function renderCoberturaTabla(filas){
   }
 
   if(!usaAgregacion){
-    // Detalle: un pago individual por fila — igual que antes.
-    let html = '<tr><th>Mes</th><th>Empresa</th><th>Activo</th><th>Pago</th><th>Utilidad del mes</th><th>De flujo acumulado</th><th>Resultado</th></tr>';
+    // Detalle: un pago individual por fila, con las mismas columnas que la vista agregada
+    // (Utilidad, Flujo, Faltante por separado) para que ambas tablas se vean consistentes.
+    let html = '<tr><th>Mes</th><th>Empresa</th><th>Activo</th><th>Pago</th><th>Cubierto con utilidad</th><th>Cubierto con flujo</th><th>Faltante</th><th>% cubierto</th></tr>';
     let grupoAnterior = null;
     datos.forEach(f => {
       const grupo = f.empresa + '|' + f.periodoLabel;
       const nuevoGrupo = grupo !== grupoAnterior;
       grupoAnterior = grupo;
 
-      const ok = f.fuente !== 'INSUFICIENTE';
-      const cls = ok ? '' : 'neg';
-      const icono = f.fuente === 'INSUFICIENTE' ? '❌' : (f.fuente === 'FLUJO ACUMULADO' ? '🟡' : '✅');
-      const resultadoTxt = f.fuente === 'FLUJO ACUMULADO'
-        ? 'Cubierto con flujo acumulado'
-        : (f.fuente === 'INSUFICIENTE' ? 'INSUFICIENTE' : 'Cubierto con utilidad del mes');
+      const cls = f.faltante > 0.01 ? 'neg' : '';
+      const semaforo = f.faltante > 0.01
+        ? '<span style="color:#e0203c;" title="No se alcanzó a cubrir">●</span>'
+        : (f.deFlujo > 0.01
+          ? '<span style="color:#c99a00;" title="Cubierto con flujo acumulado">●</span>'
+          : '<span style="color:#00875f;" title="Cubierto con utilidad">●</span>');
       html += `<tr class="subtotal${nuevoGrupo ? ' divisor-mes' : ''}">
         <td>${f.periodoLabel}</td>
         <td>${f.empresa}</td>
         <td>${f.activo}</td>
         <td>${fmtMoney(f.pago)}</td>
-        <td>${fmtMoney(f.utilidadMes)}</td>
+        <td>${f.deUtilidad > 0.01 ? fmtMoney(f.deUtilidad) : '—'}</td>
         <td>${f.deFlujo > 0.01 ? fmtMoney(f.deFlujo) : '—'}</td>
-        <td class="${cls}">${icono} ${resultadoTxt}${f.faltante>0.01 ? ' ('+fmtMoney(f.faltante)+' faltante)' : ''}</td>
+        <td class="${cls}">${f.faltante > 0.01 ? fmtMoney(f.faltante) : '—'}</td>
+        <td class="${cls}">${semaforo} ${f.pct.toFixed(0)}%</td>
       </tr>`;
     });
     table.innerHTML = html;
