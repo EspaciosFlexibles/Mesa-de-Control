@@ -1061,7 +1061,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
       </div>
       <div class="section-note" style="text-align:left; max-width:none; margin-bottom:14px;" id="cobertura-nota">
-        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más caro. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. Cada barra se apila mostrando qué proporción se cubrió con utilidad, con flujo acumulado, y qué proporción faltó — la tabla de abajo siempre muestra exactamente lo mismo que la gráfica. Sin filtros arriba, se muestra solo el último mes registrado — usa el botón para ver el acumulado del año vigente. Si eliges Año, Mes o Activo arriba, la gráfica respeta ese filtro directo.
+        Para cada mes en que a una empresa le tocaba pagar un activo (según su Periodicidad y Mes de pago), se revisa si la Utilidad Operativa de ESE mes alcanzó; si no, si el flujo de caja acumulado hasta ese punto cubrió la diferencia. Se cubre primero el pago más barato. Los activos "Contra hito" no tienen fecha fija, así que no aparecen aquí. Cada barra se apila mostrando qué proporción se cubrió con utilidad, con flujo acumulado, y qué proporción faltó — la tabla de abajo siempre muestra exactamente lo mismo que la gráfica. Sin filtros arriba, se muestra solo el último mes registrado — usa el botón para ver el acumulado del año vigente. Si eliges Año, Mes o Activo arriba, la gráfica respeta ese filtro directo.
       </div>
       <div class="kpi-row kpi-row-3" id="cobertura-kpi-row"></div>
       <div class="panel">
@@ -4453,7 +4453,7 @@ function calcularCoberturaHistorica(empresa){
   periodos.forEach((p, idx) => {
     const activosDelMes = activosEmp
       .filter(a => activoAplicaEnMes(a, p.mes))
-      .sort((a,b) => b.pago_recurrente - a.pago_recurrente);
+      .sort((a,b) => a.pago_recurrente - b.pago_recurrente); // el más barato primero
     if(activosDelMes.length === 0) return;
 
     let disponibleUtilidad = utilidadPorPeriodo[idx];
@@ -4668,8 +4668,17 @@ function agregarCoberturaPorActivo(filas){
     grupos[key].faltante += f.faltante;
     grupos[key].pago += f.pago;
   });
+  // Primero agrupados por empresa (en el mismo orden que el resto de la app); dentro de cada
+  // empresa, de mayor a menor % cubierto — los ya pagados al 100% arriba, bajando hasta los
+  // que no se alcanzaron a cubrir.
+  const ordenEmpresas = getEmpresas();
   return Object.values(grupos)
-    .sort((a,b)=> b.pago - a.pago)
+    .map(g => ({ ...g, pct: g.pago > 0 ? (g.pago - g.faltante) / g.pago * 100 : 100 }))
+    .sort((a,b) => {
+      const diffEmpresa = ordenEmpresas.indexOf(a.empresa) - ordenEmpresas.indexOf(b.empresa);
+      if(diffEmpresa !== 0) return diffEmpresa;
+      return b.pct - a.pct;
+    })
     .map(g => ({ ...g, periodoLabel: g.empresa + ' · ' + g.activo }));
 }
 
