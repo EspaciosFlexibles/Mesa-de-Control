@@ -4387,7 +4387,7 @@ function renderFinanciamiento(){
 // Para cada mes en que a una empresa le toca pagar un activo (según la Periodicidad de cada
 // activo: Mensual siempre aplica; Trimestral/Semestral/Anual solo en los meses que digas en
 // la columna "Mes de pago"; Contra hito nunca entra aquí, no tiene fecha fija), se revisa:
-// 1) ¿La Utilidad Operativa de ESE mes específico alcanza? (se cubre primero el pago más caro)
+// 1) ¿La Utilidad Operativa de ESE mes específico alcanza? (se cubre primero el pago más barato)
 // 2) Si no alcanza, ¿el flujo de caja acumulado hasta ese punto cubre lo que falta? (mismo
 //    acumulado y mismo punto de referencia de la sección "Flujo de caja acumulado" de Flujos)
 // La TABLA siempre muestra el detalle completo (utilidad del mes + flujo acumulado + resultado).
@@ -4615,7 +4615,14 @@ function obtenerVistaCobertura(filas){
   const usaAgregacion = !esUnSoloMes;
   let datos;
   if(!usaAgregacion){
-    datos = recientes.slice().reverse();
+    // Detalle: agrupado por empresa (mismo orden que el resto de la app) y, dentro de cada
+    // empresa, de mayor a menor % cubierto — igual que la vista "Por activo".
+    const ordenEmpresas = getEmpresas();
+    datos = recientes.slice().sort((a,b) => {
+      const diffEmpresa = ordenEmpresas.indexOf(a.empresa) - ordenEmpresas.indexOf(b.empresa);
+      if(diffEmpresa !== 0) return diffEmpresa;
+      return b.pct - a.pct;
+    });
   } else if(coberturaAgregacionState.modo === 'porMes'){
     datos = agregarCoberturaPorMes(recientes);
   } else {
