@@ -1844,12 +1844,6 @@ function initKpiCompareToggle(){
 initKpiCompareToggle();
 
 function renderKPIs(){
-  const rows = getFilteredOperativo();
-  const ingreso = sumBy(rows,'INGRESO');
-  const egreso = sumBy(rows,'EGRESO');
-  const utilidad = ingreso - egreso;
-  const margen = ingreso !== 0 ? (utilidad/ingreso*100) : 0;
-
   // baseRows respeta el filtro de empresa Y de año — de aquí sale el "periodo actual" y la
   // comparación "vs mes anterior" (que debe quedarse dentro del mismo año seleccionado).
   const baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
@@ -1885,6 +1879,18 @@ function renderKPIs(){
       if(!periodoActual) periodoActual = periodos[periodos.length-1]; // respaldo si nunca hay cobertura completa
     }
   }
+
+  // El valor mostrado en cada tarjeta es SOLO del "periodo actual" (el mes de la etiqueta) —
+  // no de todo lo que haya filtrado arriba en Año/Mes/Empresa. Antes esto tomaba TODO lo
+  // filtrado, lo que hacía que el número mostrado no coincidiera con el mes que decía la
+  // etiqueta (ej. mostraba el acumulado de varios meses aunque dijera "Junio 2026").
+  const rowsPeriodoActual = periodoActual
+    ? baseRows.filter(r => r.mes === periodoActual.mes && getAnioDeFila(r) === periodoActual.anio)
+    : [];
+  const ingreso = sumBy(rowsPeriodoActual,'INGRESO');
+  const egreso = sumBy(rowsPeriodoActual,'EGRESO');
+  const utilidad = ingreso - egreso;
+  const margen = ingreso !== 0 ? (utilidad/ingreso*100) : 0;
 
   let deltaIngreso = null, deltaEgreso = null, deltaUtilidad = null, deltaMargen = null;
   let coberturaIncompleta = false, etiquetaComparativo = '', sinDatoAnioAnterior = false;
