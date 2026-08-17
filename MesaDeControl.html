@@ -539,6 +539,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
     <button class="tab-btn" data-tab="flujo-efectivo">Flujo de Efectivo</button>
     <button class="tab-btn" data-tab="activos">Activos</button>
     <button class="tab-btn" data-tab="movimientos">Movimientos</button>
+    <button class="tab-btn" data-tab="comparacion">Comparación</button>
   </div>
 
   <!-- BOTÓN FLOTANTE: REGRESAR — aparece solo tras saltar desde una gráfica a otro punto del sistema -->
@@ -1146,6 +1147,33 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 
   </div>
 
+  <!-- ===================== TAB: COMPARACIÓN (Manual vs. Bancario) ===================== -->
+  <div class="tab-panel" id="tab-comparacion" style="display:none;">
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="section-eyebrow">Manual vs. bancario</div>
+          <div class="section-title">Comparación entre sistemas</div>
+        </div>
+        <div class="section-note">Compara los totales de esta Mesa de Control (captura manual) contra los de la Mesa de Control Bancaria (importada de tus estados de cuenta), por empresa y mes. Se ordena mostrando primero donde hay más diferencia.</div>
+      </div>
+      <div id="comparacion-estado" class="panel" style="text-align:center; padding:40px 20px;">
+        <div style="font-family:var(--sans); font-size:14px; color:var(--paper-dim); margin-bottom:16px;">Esta comparación se carga bajo demanda para no ralentizar la carga normal de la página.</div>
+        <button class="reset-btn" id="comparacion-cargar-btn" style="display:inline-flex;">Cargar comparación</button>
+      </div>
+      <div id="comparacion-contenido" style="display:none;">
+        <div class="kpi-row kpi-row-3" id="comparacion-kpi-row"></div>
+        <div class="panel pivot-wrap">
+          <table class="pivot" id="comparacion-table"></table>
+        </div>
+        <div style="margin-top:14px; display:flex; justify-content:space-between; align-items:center;">
+          <span id="comparacion-ultima-sync" style="font-family:var(--mono); font-size:11px; color:var(--paper-faint);"></span>
+          <button class="reset-btn" id="comparacion-refrescar-btn">↺ Refrescar comparación</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
   <!-- ESTADO DE RESULTADOS -->
   <div class="tab-panel" id="tab-estado-resultados" style="display:none;">
 
@@ -1268,6 +1296,11 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
 // ---- Pega aquí las dos URLs que te da Google al publicar cada pestaña ----
 const URL_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRVV2q6dWMVMn-Cs8WJud2tmgXosV4cqgsDru8aankbSy5bXMsvEvp77fYOkYs3TuiUVmpBAn8wbNxt/pub?gid=107600581&single=true&output=csv";
 const URL_ACTIVOS = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRVV2q6dWMVMn-Cs8WJud2tmgXosV4cqgsDru8aankbSy5bXMsvEvp77fYOkYs3TuiUVmpBAn8wbNxt/pub?gid=614522370&single=true&output=csv";
+// Consolidado de la OTRA Mesa de Control (la Bancaria) — solo se usa en la pestaña Comparación,
+// para poder ver los totales de ambos sistemas lado a lado.
+const URL_BASE_OTRO = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQa2-sylEJ50vymgS9FU_SrXljTuDdtgfkzpsiqg7-cXiXr1evJFDQ9GdxzY_a4e9em0LN5vXggh6oh/pub?gid=107600581&single=true&output=csv";
+const NOMBRE_SISTEMA_LOCAL = 'Manual';
+const NOMBRE_SISTEMA_OTRO = 'Bancario';
 
 const CONFIG_KEY = 'mesa_control_sheets_config_v1';
 
@@ -5331,7 +5364,7 @@ function renderCurrentTab(){
 }
 
 // ===================== BOTÓN "REGRESAR" (tras saltar desde una gráfica) =====================
-const NOMBRES_TAB = { flujos:'General', 'estado-resultados':'Estado de Resultados', 'flujo-efectivo':'Flujo de Efectivo', activos:'Activos', movimientos:'Movimientos' };
+const NOMBRES_TAB = { flujos:'General', 'estado-resultados':'Estado de Resultados', 'flujo-efectivo':'Flujo de Efectivo', activos:'Activos', movimientos:'Movimientos', comparacion:'Comparación' };
 let estadoAntesDeSalto = null;
 
 // Se llama justo antes de saltar de pestaña por un clic en una gráfica — guarda en qué
@@ -5362,6 +5395,121 @@ function regresarAntesDeSalto(){
   refrescarBotonesFiltroGlobal();
   switchToTab(destino.tab);
 }
+
+// ===================== COMPARACIÓN ENTRE SISTEMAS (Manual vs. Bancario) =====================
+let liveDataOtro = null;
+let lastSyncOtro = null;
+
+// Agrupa por empresa+año+mes, sumando ingreso y egreso — mismo criterio en ambos sistemas.
+function agregarPorEmpresaMes(rows){
+  const grupos = {};
+  rows.forEach(r => {
+    const anio = getAnioDeFila(r);
+    const key = r.empresa + '|' + anio + '|' + r.mes;
+    if(!grupos[key]) grupos[key] = { empresa: r.empresa, anio, mes: r.mes, ingreso: 0, egreso: 0 };
+    if(r.tipo_mov === 'INGRESO') grupos[key].ingreso += r.monto;
+    else if(r.tipo_mov === 'EGRESO') grupos[key].egreso += r.monto;
+  });
+  return grupos;
+}
+
+function renderComparacion(){
+  const estado = document.getElementById('comparacion-estado');
+  const cont = document.getElementById('comparacion-contenido');
+  if(estado) estado.style.display = 'none';
+  if(cont) cont.style.display = 'block';
+
+  const gLocal = agregarPorEmpresaMes(getAllData());
+  const gOtro = agregarPorEmpresaMes(liveDataOtro || []);
+  const keys = new Set([...Object.keys(gLocal), ...Object.keys(gOtro)]);
+
+  let filas = [...keys].map(k => {
+    const [empresa, anio, mes] = k.split('|');
+    const l = gLocal[k] || { ingreso:0, egreso:0 };
+    const o = gOtro[k] || { ingreso:0, egreso:0 };
+    return {
+      empresa, anio, mes,
+      ingresoLocal: l.ingreso, ingresoOtro: o.ingreso, deltaIngreso: l.ingreso - o.ingreso,
+      egresoLocal: l.egreso, egresoOtro: o.egreso, deltaEgreso: l.egreso - o.egreso,
+    };
+  });
+  filas.sort((a,b) => (Math.abs(b.deltaIngreso)+Math.abs(b.deltaEgreso)) - (Math.abs(a.deltaIngreso)+Math.abs(a.deltaEgreso)));
+
+  const totalIngLocal = filas.reduce((a,f)=>a+f.ingresoLocal,0);
+  const totalIngOtro = filas.reduce((a,f)=>a+f.ingresoOtro,0);
+  const totalEgrLocal = filas.reduce((a,f)=>a+f.egresoLocal,0);
+  const totalEgrOtro = filas.reduce((a,f)=>a+f.egresoOtro,0);
+  const mesesConDiferencia = filas.filter(f => Math.abs(f.deltaIngreso) > 1000 || Math.abs(f.deltaEgreso) > 1000).length;
+
+  document.getElementById('comparacion-kpi-row').innerHTML = `
+    <div class="kpi k-ingreso">
+      <div class="kpi-label">Ingreso total: ${NOMBRE_SISTEMA_LOCAL} vs. ${NOMBRE_SISTEMA_OTRO}</div>
+      <div class="kpi-value">${fmtMoney(totalIngLocal)} <span style="font-size:16px; color:var(--paper-faint);">vs</span> ${fmtMoney(totalIngOtro)}</div>
+      <div class="kpi-delta flat">Diferencia: ${fmtMoney(totalIngLocal - totalIngOtro)}</div>
+    </div>
+    <div class="kpi k-egreso">
+      <div class="kpi-label">Egreso total: ${NOMBRE_SISTEMA_LOCAL} vs. ${NOMBRE_SISTEMA_OTRO}</div>
+      <div class="kpi-value">${fmtMoney(totalEgrLocal)} <span style="font-size:16px; color:var(--paper-faint);">vs</span> ${fmtMoney(totalEgrOtro)}</div>
+      <div class="kpi-delta flat">Diferencia: ${fmtMoney(totalEgrLocal - totalEgrOtro)}</div>
+    </div>
+    <div class="kpi k-margen">
+      <div class="kpi-label">Meses con diferencia relevante</div>
+      <div class="kpi-value ${mesesConDiferencia>0?'neg':''}">${mesesConDiferencia}</div>
+      <div class="kpi-delta flat">de ${filas.length} combinaciones empresa+mes (diferencia > $1,000)</div>
+    </div>
+  `;
+
+  const table = document.getElementById('comparacion-table');
+  let html = `<tr><th>Empresa</th><th>Mes</th><th>Ingreso ${NOMBRE_SISTEMA_LOCAL}</th><th>Ingreso ${NOMBRE_SISTEMA_OTRO}</th><th>Diferencia</th><th>Egreso ${NOMBRE_SISTEMA_LOCAL}</th><th>Egreso ${NOMBRE_SISTEMA_OTRO}</th><th>Diferencia</th></tr>`;
+  filas.forEach(f => {
+    const claseIng = Math.abs(f.deltaIngreso) > 1000 ? 'neg' : '';
+    const claseEgr = Math.abs(f.deltaEgreso) > 1000 ? 'neg' : '';
+    html += `<tr>
+      <td style="text-align:left;">${f.empresa}</td>
+      <td>${f.mes} ${f.anio}</td>
+      <td>${fmtMoney(f.ingresoLocal)}</td>
+      <td>${fmtMoney(f.ingresoOtro)}</td>
+      <td class="${claseIng}">${fmtMoney(f.deltaIngreso)}</td>
+      <td>${fmtMoney(f.egresoLocal)}</td>
+      <td>${fmtMoney(f.egresoOtro)}</td>
+      <td class="${claseEgr}">${fmtMoney(f.deltaEgreso)}</td>
+    </tr>`;
+  });
+  table.innerHTML = html;
+}
+
+async function cargarComparacion(){
+  const btnCargar = document.getElementById('comparacion-cargar-btn');
+  const btnRefrescar = document.getElementById('comparacion-refrescar-btn');
+  if(btnCargar){ btnCargar.disabled = true; btnCargar.textContent = 'Cargando...'; }
+  if(btnRefrescar){ btnRefrescar.disabled = true; btnRefrescar.textContent = '↺ Cargando...'; }
+  try{
+    const rows = await fetchSheetCsv(URL_BASE_OTRO);
+    liveDataOtro = rowsToBaseData(rows);
+    lastSyncOtro = new Date();
+    renderComparacion();
+    const spanSync = document.getElementById('comparacion-ultima-sync');
+    if(spanSync) spanSync.textContent = 'Última comparación: ' + lastSyncOtro.toLocaleTimeString('es-MX');
+  }catch(e){
+    const estado = document.getElementById('comparacion-estado');
+    if(estado){
+      estado.style.display = 'block';
+      estado.innerHTML = `<div style="color:var(--rose); font-family:var(--sans); font-size:14px; margin-bottom:16px;">No se pudo cargar la comparación: ${e.message || e}</div><button class="reset-btn" id="comparacion-cargar-btn">Reintentar</button>`;
+      document.getElementById('comparacion-cargar-btn').addEventListener('click', cargarComparacion);
+    }
+  }finally{
+    if(btnCargar){ btnCargar.disabled = false; btnCargar.textContent = 'Cargar comparación'; }
+    if(btnRefrescar){ btnRefrescar.disabled = false; btnRefrescar.textContent = '↺ Refrescar comparación'; }
+  }
+}
+
+function initComparacion(){
+  const btnCargar = document.getElementById('comparacion-cargar-btn');
+  const btnRefrescar = document.getElementById('comparacion-refrescar-btn');
+  if(btnCargar) btnCargar.addEventListener('click', cargarComparacion);
+  if(btnRefrescar) btnRefrescar.addEventListener('click', cargarComparacion);
+}
+initComparacion();
 
 function switchToTab(tabName){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab === tabName));
