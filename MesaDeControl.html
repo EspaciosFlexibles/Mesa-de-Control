@@ -2145,17 +2145,92 @@ function detectarClicEnEjeX(evt, chart){
   });
   return mejorIdx;
 }
+
+// ===== TOOLTIP FLOTANTE AL PASAR EL MOUSE SOBRE EL NOMBRE DE UN MES (eje X) =====
+// Chart.js solo dispara su tooltip nativo sobre elementos de datos (barras/puntos), no sobre
+// las etiquetas del eje. Este tooltip aparte muestra el total de Ingreso y Egreso de TODO el
+// mes (ambas barras juntas), justo lo que el tooltip normal no puede mostrar.
+function obtenerDivTooltipEjeX(){
+  let div = document.getElementById('tooltip-eje-x-flotante');
+  if(!div){
+    div = document.createElement('div');
+    div.id = 'tooltip-eje-x-flotante';
+    div.style.cssText = 'position:fixed; z-index:300; display:none; background:#ffffff; border:1px solid rgba(30,26,20,0.16); border-radius:6px; padding:9px 12px; font-family:var(--sans); font-size:12.5px; color:#15151a; box-shadow:0 6px 20px rgba(20,20,30,0.14); pointer-events:none; white-space:nowrap;';
+    document.body.appendChild(div);
+  }
+  return div;
+}
+
+// Se llama desde onHover con la misma lista de periodos que corresponde a chart.data.labels.
+// Regresa true si el mouse está sobre una etiqueta de mes (para el cursor tipo "pointer").
+function manejarHoverEjeX(evt, chart, periodos){
+  const idx = detectarClicEnEjeX(evt, chart);
+  const div = obtenerDivTooltipEjeX();
+  if(idx === null || !periodos[idx]){
+    div.style.display = 'none';
+    return false;
+  }
+  const periodo = periodos[idx];
+  let totalIngreso = 0, totalEgreso = 0;
+  chart.data.datasets.forEach(ds => {
+    if(ds._tipoMov === 'INGRESO') totalIngreso += (ds.data[idx] || 0);
+    else if(ds._tipoMov === 'EGRESO') totalEgreso += (ds.data[idx] || 0);
+  });
+  div.innerHTML = `<div style="font-weight:600; margin-bottom:4px;">${labelPeriodo(periodo)}</div>
+    <div style="color:#00875f;">Ingreso total: ${fmtMoney(totalIngreso)}</div>
+    <div style="color:#e0203c;">Egreso total: ${fmtMoney(totalEgreso)}</div>
+    <div style="color:var(--paper-faint); font-size:11px; margin-top:4px;">clic: filtrar y hacer zoom a este mes</div>`;
+  const ne = evt.native;
+  div.style.left = (ne.clientX + 14) + 'px';
+  div.style.top = (ne.clientY + 14) + 'px';
+  div.style.display = 'block';
+  return true;
+}
+
+// ===== PLUGIN: TOTALES ARRIBA DE CADA BARRA (solo cuando hay un único mes filtrado/zoom) =====
+const pluginTotalesMes = {
+  id: 'totalesMes',
+  afterDatasetsDraw(chart){
+    if(state.meses.length !== 1) return;
+    const ctx = chart.ctx;
+    const datasets = chart.data.datasets;
+    ctx.save();
+    ctx.font = '700 13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    (chart.data.labels || []).forEach((_, i) => {
+      ['INGRESO','EGRESO'].forEach(tipo => {
+        let minY = null, x = null, total = 0;
+        datasets.forEach((d, di) => {
+          if(d._tipoMov !== tipo) return;
+          total += (d.data[i] || 0);
+          const meta = chart.getDatasetMeta(di);
+          const el = meta.data[i];
+          if(el){
+            if(minY === null || el.y < minY) minY = el.y;
+            x = el.x;
+          }
+        });
+        if(minY !== null && x !== null && total > 0.01){
+          ctx.fillStyle = tipo === 'INGRESO' ? '#00875f' : '#e0203c';
+          ctx.fillText(fmtMoney(total), x, minY - 10);
+        }
+      });
+    });
+    ctx.restore();
+  }
+};
 function renderEvolucion(canvasId){
   canvasId = canvasId || 'chart-evolucion';
   const ctx = document.getElementById(canvasId);
   if(!ctx) return;
 
-  // Filtra por empresa Y por año (si elegiste alguno). Si el usuario tiene uno o varios meses
-  // seleccionados en el filtro general de arriba, esos meses se resaltan visualmente (el resto
-  // se atenúa) en vez de ocultar el resto — pero el año sí filtra de verdad, no solo resalta.
+  // Filtra por empresa, año Y mes (si elegiste alguno). Cuando hay un solo mes elegido, la
+  // gráfica hace "zoom" — solo queda ese periodo, mostrando las barras más grandes para
+  // apreciar mejor su composición (ver clic en el eje X más abajo).
   const baseRows = excluirActivosSiAplica(getAllData()).filter(d=>
     (state.empresas.length === 0 || state.empresas.includes(d.empresa)) &&
-    (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d)))
+    (state.anios.length === 0 || state.anios.includes(getAnioDeFila(d))) &&
+    (state.meses.length === 0 || state.meses.includes(d.mes))
   );
   // Periodos reales (año+mes) en orden cronológico — así, si hay varios años, Enero 2025 y
   // Enero 2026 aparecen como barras separadas en su lugar correcto, no mezcladas en una sola.
@@ -2232,24 +2307,41 @@ function renderEvolucion(canvasId){
   if(_chartsEvolucion[canvasId]) _chartsEvolucion[canvasId].destroy();
   const chart = new Chart(ctx, {
     data: { labels, datasets: [...datasetsIngreso, ...datasetsEgreso, datasetUtilidad] },
+    plugins: [pluginTotalesMes],
     options: {
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
       onClick: (evt, elements) => {
         if(!elements.length){
-          // Clic en el nombre del mes (eje X): lleva a Movimientos con ingresos Y egresos de ese periodo.
+          // Clic en el nombre del mes (eje X): filtra TODO a ese mes (respetando los demás
+          // filtros) y hace zoom en la gráfica — deja de mostrar los demás meses para apreciar
+          // mejor la composición de este.
           const idx = detectarClicEnEjeX(evt, chart);
           if(idx === null) return;
           const periodo = periodos[idx];
+          delete _rubroFiltroEvolucion[canvasId]; // vuelve a mostrar todos los rubros del mes
+          obtenerDivTooltipEjeX().style.display = 'none';
+          state.meses = [periodo.mes];
+          state.anios = [periodo.anio];
+          refrescarBotonesFiltroGlobal();
+          renderCurrentTab();
+          return;
+        }
+        const ds = chart.data.datasets[elements[0].datasetIndex];
+        if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica a un rubro específico
+        if(state.meses.length === 1){
+          // Ya está en modo zoom a un solo mes: el clic en cualquier segmento navega directo,
+          // no hace falta aislar primero (ya solo hay un mes en pantalla).
+          const periodo = periodos[elements[0].index];
           goToMovimientosFiltrado({
             empresa: state.empresas.length === 1 ? state.empresas[0] : '',
+            categoria: ds._categoria,
+            tipoMov: ds._tipoMov,
             mes: periodo.mes,
             anio: periodo.anio,
           });
           return;
         }
-        const ds = chart.data.datasets[elements[0].datasetIndex];
-        if(!ds._tipoMov) return; // clic sobre la línea de Utilidad: no aplica a un rubro específico
         const yaAislado = _rubroFiltroEvolucion[canvasId];
         if(!yaAislado){
           // Paso 1: nada aislado todavía -> aísla este rubro.
@@ -2268,7 +2360,8 @@ function renderEvolucion(canvasId){
         }
       },
       onHover: (evt, elements) => {
-        evt.native.target.style.cursor = (elements.length || detectarClicEnEjeX(evt, chart) !== null) ? 'pointer' : 'default';
+        const enEjeX = manejarHoverEjeX(evt, chart, periodos);
+        evt.native.target.style.cursor = (elements.length || enEjeX) ? 'pointer' : 'default';
       },
       plugins:{
         legend:{ display:false },
@@ -2283,9 +2376,10 @@ function renderEvolucion(canvasId){
               const n = ctx.dataset._counts ? ctx.dataset._counts[ctx.dataIndex] : null;
               const tipoTxt = ctx.dataset._tipoMov === 'INGRESO' ? 'Ingreso' : 'Egreso';
               const yaAislado = !!_rubroFiltroEvolucion[canvasId];
+              const enZoomMes = state.meses.length === 1;
               const lineas = [`${tipoTxt}: ${fmtMoney(ctx.parsed.y)}`];
               if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'}`);
-              lineas.push(yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este rubro (ingreso + egreso)');
+              lineas.push(enZoomMes ? 'clic para ver el detalle en Movimientos' : (yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este rubro (ingreso + egreso)'));
               return lineas;
             }
           } }
@@ -2298,6 +2392,7 @@ function renderEvolucion(canvasId){
   });
   actualizarBarraRubroEvolucion(canvasId);
   _chartsEvolucion[canvasId] = chart;
+  ctx.onmouseleave = () => obtenerDivTooltipEjeX().style.display = 'none';
 }
 
 // ===================== EVOLUCIÓN ACUMULADA (Flujo de Efectivo) =====================
@@ -2406,30 +2501,55 @@ function renderEvolucionAcumulada(canvasId){
   if(_chartsEvolucion[canvasId]) _chartsEvolucion[canvasId].destroy();
   if(periodos.length === 0) return;
 
-  const vista = filtrarPeriodosPorAnioDisplay(periodos, labels, [...datasetsIngreso, datasetUtilidadesArrastre, ...datasetsEgreso, datasetPerdidasArrastre, datasetUtilidad]);
-  if(vista.periodos.length === 0) return;
-  const periodosVista = vista.periodos;
+  const vistaAnio = filtrarPeriodosPorAnioDisplay(periodos, labels, [...datasetsIngreso, datasetUtilidadesArrastre, ...datasetsEgreso, datasetPerdidasArrastre, datasetUtilidad]);
+  if(vistaAnio.periodos.length === 0) return;
+  // Si además hay un mes específico filtrado (zoom), se acota la VISTA aquí — el cálculo de
+  // arrastre ya se hizo arriba con el historial completo, así que el número seguirá siendo
+  // correcto aunque solo se muestre este mes.
+  let periodosVista = vistaAnio.periodos, labelsVista = vistaAnio.labels, datasetsVista = vistaAnio.datasetsConData;
+  if(state.meses.length > 0){
+    const mask = periodosVista.map(p => state.meses.includes(p.mes));
+    periodosVista = periodosVista.filter((_,i)=>mask[i]);
+    labelsVista = labelsVista.filter((_,i)=>mask[i]);
+    datasetsVista = datasetsVista.map(ds => ({ ...ds, data: ds.data.filter((_,i)=>mask[i]) }));
+  }
+  if(periodosVista.length === 0) return;
 
   const chart = new Chart(ctx, {
-    data: { labels: vista.labels, datasets: vista.datasetsConData },
+    data: { labels: labelsVista, datasets: datasetsVista },
+    plugins: [pluginTotalesMes],
     options: {
       responsive:true,
       interaction:{ mode:'nearest', axis:'xy', intersect:true },
       onClick: (evt, elements) => {
         if(!elements.length){
-          // Clic en el nombre del mes (eje X): lleva a Movimientos con ingresos Y egresos de ese periodo.
+          // Clic en el nombre del mes (eje X): filtra TODO a ese mes (respetando los demás
+          // filtros) y hace zoom en la gráfica.
           const idx = detectarClicEnEjeX(evt, chart);
           if(idx === null) return;
           const periodo = periodosVista[idx];
+          delete _rubroFiltroEvolucion[canvasId];
+          obtenerDivTooltipEjeX().style.display = 'none';
+          state.meses = [periodo.mes];
+          state.anios = [periodo.anio];
+          refrescarBotonesFiltroGlobal();
+          renderCurrentTab();
+          return;
+        }
+        const ds = chart.data.datasets[elements[0].datasetIndex];
+        if(!ds._tipoMov || ds._esArrastre) return; // línea de Utilidad o bloques de arrastre: no hay un único rubro al que aislar
+        if(state.meses.length === 1){
+          // Ya está en modo zoom a un solo mes: el clic en cualquier segmento navega directo.
+          const periodo = periodosVista[elements[0].index];
           goToMovimientosFiltrado({
             empresa: state.empresas.length === 1 ? state.empresas[0] : '',
+            categoria: ds._categoria,
+            tipoMov: ds._tipoMov,
             mes: periodo.mes,
             anio: periodo.anio,
           });
           return;
         }
-        const ds = chart.data.datasets[elements[0].datasetIndex];
-        if(!ds._tipoMov || ds._esArrastre) return; // línea de Utilidad o bloques de arrastre: no hay un único rubro al que aislar
         const yaAislado = _rubroFiltroEvolucion[canvasId];
         if(!yaAislado){
           // Paso 1: nada aislado todavía -> aísla este rubro.
@@ -2449,7 +2569,8 @@ function renderEvolucionAcumulada(canvasId){
       },
       onHover: (evt, elements) => {
         const sobreArrastre = elements.length && chart.data.datasets[elements[0].datasetIndex]._esArrastre;
-        evt.native.target.style.cursor = ((elements.length && !sobreArrastre) || detectarClicEnEjeX(evt, chart) !== null) ? 'pointer' : 'default';
+        const enEjeX = manejarHoverEjeX(evt, chart, periodosVista);
+        evt.native.target.style.cursor = ((elements.length && !sobreArrastre) || enEjeX) ? 'pointer' : 'default';
       },
       plugins:{
         legend:{ display:false },
@@ -2462,9 +2583,10 @@ function renderEvolucionAcumulada(canvasId){
               if(ctx.dataset._esArrastre) return [monto, 'Acumulado de meses anteriores'];
               const n = ctx.dataset._counts ? ctx.dataset._counts[ctx.dataIndex] : null;
               const yaAislado = !!_rubroFiltroEvolucion[canvasId];
+              const enZoomMes = state.meses.length === 1;
               const lineas = [monto];
               if(n != null) lineas.push(`${n} movimiento${n===1?'':'s'}`);
-              lineas.push(yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este rubro (ingreso + egreso)');
+              lineas.push(enZoomMes ? 'clic para ver el detalle en Movimientos' : (yaAislado ? 'clic para ver el detalle en Movimientos' : 'clic para aislar este rubro (ingreso + egreso)'));
               return lineas;
             },
           } }
@@ -2477,6 +2599,7 @@ function renderEvolucionAcumulada(canvasId){
   });
   _chartsEvolucion[canvasId] = chart;
   actualizarBarraRubroEvolucion(canvasId);
+  ctx.onmouseleave = () => obtenerDivTooltipEjeX().style.display = 'none';
 }
 
 // ===================== UTILIDAD ACUMULADA (corrido mes contra mes) =====================
