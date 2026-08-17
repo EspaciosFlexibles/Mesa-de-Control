@@ -1155,7 +1155,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
           <div class="section-eyebrow">Manual vs. bancario</div>
           <div class="section-title">Comparación entre sistemas</div>
         </div>
-        <div class="section-note">Compara los totales de esta Mesa de Control (captura manual) contra los de la Mesa de Control Bancaria (importada de tus estados de cuenta), por empresa y mes. Se ordena mostrando primero donde hay más diferencia.</div>
+        <div class="section-note">Compara los totales de esta Mesa de Control (captura manual) contra los de la Mesa de Control Bancaria (importada de tus estados de cuenta), por empresa y mes. Respeta el filtro de Año/Mes/Empresa/Activo y el toggle Todo/Sin activos de arriba de la página — ambos lados de la comparación se acotan igual. Se ordena mostrando primero donde hay más diferencia. Nota: el toggle "Sin activos" usa la clasificación de tu hoja Activos local para decidir qué excluir de ambos sistemas, ya que no se carga la clasificación propia del otro sistema.</div>
       </div>
       <div id="comparacion-estado" class="panel" style="text-align:center; padding:40px 20px;">
         <div style="font-family:var(--sans); font-size:14px; color:var(--paper-dim); margin-bottom:16px;">Esta comparación se carga bajo demanda para no ralentizar la carga normal de la página.</div>
@@ -5361,6 +5361,7 @@ function renderCurrentTab(){
   else if(currentTab === 'movimientos') renderMovimientos();
   else if(currentTab === 'estado-resultados') renderEstadoResultados();
   else if(currentTab === 'flujo-efectivo') renderFlujoEfectivo();
+  else if(currentTab === 'comparacion' && liveDataOtro !== null) renderComparacion();
 }
 
 // ===================== BOTÓN "REGRESAR" (tras saltar desde una gráfica) =====================
@@ -5413,14 +5414,26 @@ function agregarPorEmpresaMes(rows){
   return grupos;
 }
 
+// Aplica exactamente los mismos filtros globales de arriba (Año/Mes/Empresa/Activo y el
+// toggle Todo/Sin activos) a cualquier conjunto de filas — se usa igual para tu sistema local
+// que para el otro, así ambos lados de la comparación respetan el mismo recorte.
+function filasComparacionFiltradas(rows){
+  return excluirActivosSiAplica(rows).filter(r =>
+    empresaEnFiltro(r.empresa) &&
+    (state.meses.length === 0 || state.meses.includes(r.mes)) &&
+    (state.anios.length === 0 || state.anios.includes(getAnioDeFila(r))) &&
+    (state.activosFiltro.length === 0 || state.activosFiltro.includes(r.activo))
+  );
+}
+
 function renderComparacion(){
   const estado = document.getElementById('comparacion-estado');
   const cont = document.getElementById('comparacion-contenido');
   if(estado) estado.style.display = 'none';
   if(cont) cont.style.display = 'block';
 
-  const gLocal = agregarPorEmpresaMes(getAllData());
-  const gOtro = agregarPorEmpresaMes(liveDataOtro || []);
+  const gLocal = agregarPorEmpresaMes(filasComparacionFiltradas(getAllData()));
+  const gOtro = agregarPorEmpresaMes(filasComparacionFiltradas(liveDataOtro || []));
   const keys = new Set([...Object.keys(gLocal), ...Object.keys(gOtro)]);
 
   let filas = [...keys].map(k => {
