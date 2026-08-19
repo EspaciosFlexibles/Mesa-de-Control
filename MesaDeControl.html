@@ -2145,36 +2145,44 @@ function renderResumenEvolucion(contId, periodos, datasets){
   const ingresoPorPeriodo = periodos.map((p,i) => datasets.filter(d=>d._tipoMov==='INGRESO').reduce((a,d)=>a+(d.data[i]||0),0));
   const egresoPorPeriodo = periodos.map((p,i) => datasets.filter(d=>d._tipoMov==='EGRESO').reduce((a,d)=>a+(d.data[i]||0),0));
 
+  const ingresoPromedio = ingresoPorPeriodo.reduce((a,b)=>a+b,0)/ingresoPorPeriodo.length;
+  const egresoPromedio = egresoPorPeriodo.reduce((a,b)=>a+b,0)/egresoPorPeriodo.length;
+  const utilidadPromedio = ingresoPromedio - egresoPromedio;
+
+  // % de incremento/decremento del ingreso, promedio mes contra mes anterior.
   let incrementos = [];
   for(let i=1;i<ingresoPorPeriodo.length;i++){
     if(ingresoPorPeriodo[i-1] !== 0) incrementos.push((ingresoPorPeriodo[i]-ingresoPorPeriodo[i-1])/ingresoPorPeriodo[i-1]*100);
   }
   const incrementoPromedio = incrementos.length ? incrementos.reduce((a,b)=>a+b,0)/incrementos.length : null;
 
+  // % que representa el egreso sobre el ingreso, promedio de cada mes.
   let pctEgresos = [];
   ingresoPorPeriodo.forEach((ing,i)=>{ if(ing !== 0) pctEgresos.push(egresoPorPeriodo[i]/ing*100); });
   const pctEgresoPromedio = pctEgresos.length ? pctEgresos.reduce((a,b)=>a+b,0)/pctEgresos.length : null;
 
-  const utilidades = ingresoPorPeriodo.map((ing,i)=> ing - egresoPorPeriodo[i]);
-  const utilidadPromedio = utilidades.length ? utilidades.reduce((a,b)=>a+b,0)/utilidades.length : null;
+  // Margen promedio (utilidad/ingreso), promedio de cada mes.
+  let margenes = [];
+  ingresoPorPeriodo.forEach((ing,i)=>{ if(ing !== 0) margenes.push((ing-egresoPorPeriodo[i])/ing*100); });
+  const margenPromedio = margenes.length ? margenes.reduce((a,b)=>a+b,0)/margenes.length : null;
 
-  const etiquetaPromedio = periodos.length === 1 ? '(solo este mes)' : `(promedio de ${periodos.length} meses)`;
+  const etiquetaPromedio = periodos.length === 1 ? 'solo este mes' : `promedio de ${periodos.length} meses`;
 
   cont.innerHTML = `
     <div class="kpi k-ingreso">
-      <div class="kpi-label">Incremento de ingreso promedio</div>
-      <div class="kpi-value ${incrementoPromedio!==null && incrementoPromedio<0?'neg':''}">${incrementoPromedio!==null ? fmtPct(incrementoPromedio) : '— sin datos suficientes'}</div>
-      <div class="kpi-delta flat">mes contra mes anterior</div>
+      <div class="kpi-label">Ingreso promedio</div>
+      <div class="kpi-value">${fmtMoney(ingresoPromedio)}</div>
+      <div class="kpi-delta flat ${incrementoPromedio!==null && incrementoPromedio<0?'neg':''}">${incrementoPromedio!==null ? fmtPct(incrementoPromedio)+' promedio mes contra mes' : 'sin datos suficientes para % · '+etiquetaPromedio}</div>
     </div>
     <div class="kpi k-egreso">
-      <div class="kpi-label">Egresos sobre ingresos</div>
-      <div class="kpi-value">${pctEgresoPromedio!==null ? pctEgresoPromedio.toFixed(1)+'%' : '—'}</div>
-      <div class="kpi-delta flat">promedio ${etiquetaPromedio}</div>
+      <div class="kpi-label">Egreso promedio</div>
+      <div class="kpi-value">${fmtMoney(egresoPromedio)}</div>
+      <div class="kpi-delta flat">${pctEgresoPromedio!==null ? pctEgresoPromedio.toFixed(1)+'% del ingreso, en promedio' : '—'} · ${etiquetaPromedio}</div>
     </div>
     <div class="kpi k-margen">
       <div class="kpi-label">Utilidad promedio</div>
-      <div class="kpi-value ${utilidadPromedio!==null && utilidadPromedio<0?'neg':''}">${utilidadPromedio!==null ? fmtMoney(utilidadPromedio) : '—'}</div>
-      <div class="kpi-delta flat">por mes ${etiquetaPromedio}</div>
+      <div class="kpi-value ${utilidadPromedio<0?'neg':''}">${fmtMoney(utilidadPromedio)}</div>
+      <div class="kpi-delta flat ${margenPromedio!==null && margenPromedio<0?'neg':''}">${margenPromedio!==null ? margenPromedio.toFixed(1)+'% margen promedio' : '—'} · ${etiquetaPromedio}</div>
     </div>
   `;
 }
@@ -4988,7 +4996,7 @@ function renderCoberturaTabla(filas){
         : (f.deFlujo > 0.01
           ? '<span style="color:#c99a00;" title="Cubierto con flujo acumulado">●</span>'
           : '<span style="color:#00875f;" title="Cubierto con utilidad">●</span>');
-      html += `<tr class="subtotal${nuevoGrupo ? ' divisor-mes' : ''}">
+      html += `<tr class="subtotal${nuevoGrupo ? ' divisor-mes' : ''}" data-clic-mov data-empresa="${f.empresa}" data-activo="${f.activo}" data-mes="${f.mes}" data-anio="${f.anio}">
         <td>${f.periodoLabel}</td>
         <td>${f.empresa}</td>
         <td>${f.activo}</td>
@@ -5000,6 +5008,7 @@ function renderCoberturaTabla(filas){
       </tr>`;
     });
     table.innerHTML = html;
+    adjuntarClicsMovimientos(table);
     return;
   }
 
@@ -5014,7 +5023,10 @@ function renderCoberturaTabla(filas){
       : (f.deFlujo > 0.01
         ? '<span style="color:#c99a00;" title="Cubierto con flujo acumulado">●</span>'
         : '<span style="color:#00875f;" title="Cubierto con utilidad">●</span>');
-    html += `<tr class="subtotal">
+    const atributos = modoAgregacion === 'porMes'
+      ? `data-mes="${f.mes}" data-anio="${f.anio}"`
+      : `data-empresa="${f.empresa}" data-activo="${f.activo}"`;
+    html += `<tr class="subtotal" data-clic-mov ${atributos}>
       <td>${modoAgregacion === 'porMes' ? f.periodoLabel : f.activo}</td>
       ${modoAgregacion==='porActivo' ? `<td>${f.empresa}</td>` : ''}
       <td>${fmtMoney(f.pago)}</td>
@@ -5025,6 +5037,7 @@ function renderCoberturaTabla(filas){
     </tr>`;
   });
   table.innerHTML = html;
+  adjuntarClicsMovimientos(table);
 }
 
 // Valor ordenable de un periodo (año*12 + índice de mes) para comparar entre empresas distintas
@@ -5752,6 +5765,7 @@ function adjuntarClicsMovimientos(container){
         empresa: el.dataset.empresa || '',
         categoria: el.dataset.categoria || '',
         tipoMov: el.dataset.tipomov || '',
+        activo: el.dataset.activo || undefined,
         mes: el.dataset.mes ? el.dataset.mes.split(',') : (state.meses.length ? state.meses : undefined),
         anio: el.dataset.anio || undefined,
         razonSocial: el.dataset.razon || undefined,
