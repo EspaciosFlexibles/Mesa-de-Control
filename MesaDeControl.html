@@ -948,6 +948,24 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         <div class="section-note">Da clic en cualquier activo de las tablas de abajo para ver su ficha completa.</div>
       </div>
 
+      <div style="display:flex; align-items:center; gap:22px; flex-wrap:wrap; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="flabel" style="font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint);">TIPO</span>
+          <div class="msdrop" id="msdrop-activos-tipo">
+            <button class="msdrop-btn" type="button" id="msdrop-btn-activos-tipo">Todos ▾</button>
+            <div class="msdrop-panel" id="msdrop-panel-activos-tipo"></div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="flabel" style="font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint);">ORDEN</span>
+          <div class="msdrop" id="msdrop-activos-orden">
+            <button class="msdrop-btn" type="button" id="msdrop-btn-activos-orden">Por defecto ▾</button>
+            <div class="msdrop-panel" id="msdrop-panel-activos-orden"></div>
+          </div>
+        </div>
+        <div class="section-note" style="margin:0;">Se aplica igual en las 3 pestañas de abajo.</div>
+      </div>
+
       <div class="subtabs" id="activos-subtabs">
         <button class="subtab-btn active" data-subtab="ficha">Ficha financiera de cada activo</button>
         <button class="subtab-btn" data-subtab="pendientes">Activos que aún se están pagando</button>
@@ -955,20 +973,6 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       </div>
 
       <div class="activos-subtab-panel" id="subtab-ficha">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:14px;">
-          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-            <span class="flabel" style="font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint);">TIPO</span>
-            <div class="msdrop" id="msdrop-ficha-tipo">
-              <button class="msdrop-btn" type="button" id="msdrop-btn-ficha-tipo">Todos ▾</button>
-              <div class="msdrop-panel" id="msdrop-panel-ficha-tipo"></div>
-            </div>
-          </div>
-          <div class="view-toggle" id="ficha-orden-toggle">
-            <button class="active" data-orden="roi">Por ROI</button>
-            <button data-orden="tipo">Por Tipo</button>
-            <button data-orden="empresa">Por Empresa</button>
-          </div>
-        </div>
         <div class="panel pivot-wrap">
           <table class="pivot" id="activos-table">
             <thead>
@@ -4308,9 +4312,12 @@ function renderActivosPendientes(){
   }
 
   const esPagados = activosPagoState.vista === 'pagados';
-  const filtrados = todos
-    .filter(a => esPagados ? a.faltante <= 0 : a.faltante > 0)
-    .sort((a,b) => esPagados ? (a.activo.localeCompare(b.activo)) : (b.faltante - a.faltante));
+  let filtrados = todos.filter(a => esPagados ? a.faltante <= 0 : a.faltante > 0);
+  if(activosVistaState.tipos.length > 0){
+    filtrados = filtrados.filter(a => activosVistaState.tipos.includes(a.tipo));
+  }
+  const { sorted: ordenados, grupoDe } = ordenarYAgruparActivos(filtrados, (a,b) => esPagados ? (a.activo.localeCompare(b.activo)) : (b.faltante - a.faltante));
+  filtrados = ordenados;
 
   if(filtrados.length === 0){
     table.innerHTML = `<tbody><tr><td class="capture-log-empty">${esPagados ? 'Todavía no hay activos marcados como totalmente pagados.' : 'No hay activos pendientes de pago — todos los que tienen datos capturados ya están al 100%.'}</td></tr></tbody>`;
@@ -4319,7 +4326,12 @@ function renderActivosPendientes(){
 
   let html = `<thead><tr><th>Activo</th><th>Costo total</th><th>Pagado a la fecha</th><th>% pagado</th><th>${esPagados ? 'Diferencia' : 'Falta por pagar'}</th><th>Pago mensual</th><th>Renta /mes</th></tr></thead><tbody>`;
   let totalCosto = 0, totalPagado = 0, totalFaltante = 0, totalMensual = 0, totalRenta = 0;
+  let grupoAnterior = undefined;
   filtrados.forEach(a=>{
+    const grupoActual = grupoDe(a);
+    const nuevoGrupo = grupoActual !== undefined && grupoActual !== grupoAnterior;
+    grupoAnterior = grupoActual;
+    if(nuevoGrupo) html += filaDivisorGrupo(grupoActual, 7);
     totalCosto += a.costo; totalPagado += a.cantidad_pagada; totalFaltante += a.faltante; totalMensual += (a.pago_recurrente||0);
     if(a.rentaMostrar) totalRenta += a.rentaMostrar;
     const rentaCell = a.rentaMostrar
@@ -4366,9 +4378,33 @@ function initActivosPagoToggle(){
 }
 initActivosPagoToggle();
 
-// Filtro por Tipo (Bodegas Grandes, Terrenos, etc.) y orden de la tabla "Ficha financiera de
-// cada activo" — es un filtro local de esta sub-pestaña, no afecta las otras dos.
-const fichaActivosState = { orden: 'roi', tipos: [] };
+// Filtro por Tipo (Bodegas Grandes, Terrenos, etc.) y orden — compartido, se aplica igual en
+// las 3 sub-pestañas de Activos (Ficha financiera, Pendientes de pago, Flujo por activo).
+const activosVistaState = { orden: 'default', tipos: [] };
+
+// Toma una lista ya filtrada por Tipo (afuera) y la ordena según activosVistaState.orden:
+// 'default' respeta el orden natural que cada tabla ya traía (sortNatural), 'tipo'/'empresa'
+// agrupan por esa dimensión primero, usando sortNatural como criterio dentro de cada grupo.
+// Regresa también grupoDe(item), para que cada tabla pueda dibujar su propio divisor de grupo.
+function ordenarYAgruparActivos(rows, sortNatural){
+  const ordenEmpresas = getEmpresas();
+  let sorted;
+  if(activosVistaState.orden === 'tipo'){
+    sorted = [...rows].sort((a,b) => a.tipo.localeCompare(b.tipo) || sortNatural(a,b));
+  } else if(activosVistaState.orden === 'empresa'){
+    sorted = [...rows].sort((a,b) => (ordenEmpresas.indexOf(a.empresa) - ordenEmpresas.indexOf(b.empresa)) || sortNatural(a,b));
+  } else {
+    sorted = [...rows].sort(sortNatural);
+  }
+  const grupoDe = (a) => activosVistaState.orden === 'tipo' ? a.tipo : (activosVistaState.orden === 'empresa' ? a.empresa : null);
+  return { sorted, grupoDe };
+}
+
+// Fila de encabezado divisor cuando se agrupa por Tipo o Empresa (nada si orden = 'default').
+function filaDivisorGrupo(grupoActual, colspan){
+  if(grupoActual === null) return '';
+  return `<tr><th colspan="${colspan}" style="text-align:left; background:var(--panel-raised); font-family:var(--mono); font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--paper-dim);">${activosVistaState.orden === 'tipo' ? 'Tipo' : 'Empresa'}: ${grupoActual}</th></tr>`;
+}
 
 function initActivosSubtabs(){
   document.querySelectorAll('#activos-subtabs .subtab-btn').forEach(btn=>{
@@ -4382,57 +4418,86 @@ function initActivosSubtabs(){
 }
 initActivosSubtabs();
 
-function initFichaActivosControles(){
-  const btn = document.getElementById('msdrop-btn-ficha-tipo');
-  const panel = document.getElementById('msdrop-panel-ficha-tipo');
-  if(btn && panel){
+function initActivosVistaControles(){
+  // TIPO — multiselección con casillas.
+  const btnTipo = document.getElementById('msdrop-btn-activos-tipo');
+  const panelTipo = document.getElementById('msdrop-panel-activos-tipo');
+  if(btnTipo && panelTipo){
     const actualizarBotonTipo = () => {
-      const n = fichaActivosState.tipos.length;
-      btn.textContent = (n === 0 ? 'Todos' : (n === 1 ? fichaActivosState.tipos[0] : n + ' seleccionados')) + ' ▾';
-      btn.classList.toggle('has-value', n > 0);
+      const n = activosVistaState.tipos.length;
+      btnTipo.textContent = (n === 0 ? 'Todos' : (n === 1 ? activosVistaState.tipos[0] : n + ' seleccionados')) + ' ▾';
+      btnTipo.classList.toggle('has-value', n > 0);
     };
     const renderPanelTipo = () => {
       const tipos = [...new Set(getActivos().map(a=>a.tipo))].filter(Boolean).sort();
-      panel.innerHTML = tipos.length ? tipos.map(t => `
+      panelTipo.innerHTML = tipos.length ? tipos.map(t => `
         <label class="msdrop-item">
-          <input type="checkbox" value="${t}" ${fichaActivosState.tipos.includes(t)?'checked':''}>
+          <input type="checkbox" value="${t}" ${activosVistaState.tipos.includes(t)?'checked':''}>
           <span>${t}</span>
         </label>
       `).join('') : '<div class="msdrop-empty">Sin tipos disponibles.</div>';
-      panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      panelTipo.querySelectorAll('input[type=checkbox]').forEach(cb=>{
         cb.addEventListener('change', ()=>{
           const v = cb.value;
-          const idx = fichaActivosState.tipos.indexOf(v);
-          if(cb.checked && idx === -1) fichaActivosState.tipos.push(v);
-          else if(!cb.checked && idx !== -1) fichaActivosState.tipos.splice(idx,1);
+          const idx = activosVistaState.tipos.indexOf(v);
+          if(cb.checked && idx === -1) activosVistaState.tipos.push(v);
+          else if(!cb.checked && idx !== -1) activosVistaState.tipos.splice(idx,1);
           actualizarBotonTipo();
-          renderActivosTable();
+          renderActivos();
         });
       });
     };
-    btn.addEventListener('click', (e)=>{
+    btnTipo.addEventListener('click', (e)=>{
       e.stopPropagation();
-      const abierto = panel.style.display === 'block';
+      const abierto = panelTipo.style.display === 'block';
       document.querySelectorAll('.msdrop-panel').forEach(p=>p.style.display='none');
-      if(!abierto){ renderPanelTipo(); panel.style.display = 'block'; }
+      if(!abierto){ renderPanelTipo(); panelTipo.style.display = 'block'; }
     });
     document.addEventListener('click', (e)=>{
-      if(!panel.contains(e.target) && e.target !== btn) panel.style.display = 'none';
+      if(!panelTipo.contains(e.target) && e.target !== btnTipo) panelTipo.style.display = 'none';
     });
     actualizarBotonTipo();
   }
 
-  document.querySelectorAll('#ficha-orden-toggle button').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      document.querySelectorAll('#ficha-orden-toggle button').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active');
-      fichaActivosState.orden = b.dataset.orden;
-      renderActivosTable();
+  // ORDEN — lista desplegable de selección única (no checkboxes).
+  const btnOrden = document.getElementById('msdrop-btn-activos-orden');
+  const panelOrden = document.getElementById('msdrop-panel-activos-orden');
+  if(btnOrden && panelOrden){
+    const OPCIONES_ORDEN = [ ['default','Por defecto'], ['tipo','Por Tipo'], ['empresa','Por Empresa'] ];
+    const actualizarBotonOrden = () => {
+      const encontrada = OPCIONES_ORDEN.find(o => o[0] === activosVistaState.orden);
+      btnOrden.textContent = (encontrada ? encontrada[1] : 'Por defecto') + ' ▾';
+      btnOrden.classList.toggle('has-value', activosVistaState.orden !== 'default');
+    };
+    const renderPanelOrden = () => {
+      panelOrden.innerHTML = OPCIONES_ORDEN.map(([valor,label]) => `
+        <label class="msdrop-item">
+          <input type="radio" name="activos-orden-radio" value="${valor}" ${activosVistaState.orden===valor?'checked':''}>
+          <span>${label}</span>
+        </label>
+      `).join('');
+      panelOrden.querySelectorAll('input[type=radio]').forEach(rb=>{
+        rb.addEventListener('change', ()=>{
+          activosVistaState.orden = rb.value;
+          actualizarBotonOrden();
+          panelOrden.style.display = 'none';
+          renderActivos();
+        });
+      });
+    };
+    btnOrden.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const abierto = panelOrden.style.display === 'block';
+      document.querySelectorAll('.msdrop-panel').forEach(p=>p.style.display='none');
+      if(!abierto){ renderPanelOrden(); panelOrden.style.display = 'block'; }
     });
-  });
+    document.addEventListener('click', (e)=>{
+      if(!panelOrden.contains(e.target) && e.target !== btnOrden) panelOrden.style.display = 'none';
+    });
+    actualizarBotonOrden();
+  }
 }
-initFichaActivosControles();
-
+initActivosVistaControles();
 
 // Ingreso real mensual promedio para una combinación Empresa+Tipo, usando todos los meses con datos en Base.
 function ingresoRealPromedioMensual(empresa, tipo){
@@ -4597,8 +4662,8 @@ function renderActivosTable(){
   const tbody = document.querySelector('#activos-table tbody');
   if(!tbody) return;
 
-  if(fichaActivosState.tipos.length > 0){
-    rows = rows.filter(a => fichaActivosState.tipos.includes(a.tipo));
+  if(activosVistaState.tipos.length > 0){
+    rows = rows.filter(a => activosVistaState.tipos.includes(a.tipo));
   }
 
   if(rows.length === 0){
@@ -4606,17 +4671,7 @@ function renderActivosTable(){
     return;
   }
 
-  const ordenEmpresas = getEmpresas();
-  let sorted;
-  if(fichaActivosState.orden === 'tipo'){
-    sorted = [...rows].sort((a,b) => a.tipo.localeCompare(b.tipo) || (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
-  } else if(fichaActivosState.orden === 'empresa'){
-    sorted = [...rows].sort((a,b) => (ordenEmpresas.indexOf(a.empresa) - ordenEmpresas.indexOf(b.empresa)) || (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
-  } else {
-    sorted = [...rows].sort((a,b) => (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
-  }
-
-  const grupoDe = (a) => fichaActivosState.orden === 'tipo' ? a.tipo : (fichaActivosState.orden === 'empresa' ? a.empresa : null);
+  const { sorted, grupoDe } = ordenarYAgruparActivos(rows, (a,b) => (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
   let grupoAnterior = undefined;
 
   tbody.innerHTML = sorted.map(a => {
@@ -4631,7 +4686,7 @@ function renderActivosTable(){
       ? `<div class="bar-cell"><span style="font-family:var(--mono); font-size:12px;">${a.pctRecuperado.toFixed(1)}%</span><div class="mini-bar" style="width:${Math.max(a.pctRecuperado,3)}px; max-width:50px;"></div></div>`
       : `<span style="color:var(--paper-faint); font-size:11px;" title="Conecta esta fila a un Activo en la columna 'Activo' de tus movimientos para calcular esto con precisión.">— sin conectar</span>`;
     return `
-    ${nuevoGrupo ? `<tr><th colspan="10" style="text-align:left; background:var(--panel-raised); font-family:var(--mono); font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--paper-dim);">${fichaActivosState.orden === 'tipo' ? 'Tipo' : 'Empresa'}: ${grupoActual}</th></tr>` : ''}
+    ${nuevoGrupo ? filaDivisorGrupo(grupoActual, 10) : ''}
     <tr data-activo="${a.activo}">
       <td style="text-align:left;">
         <div style="font-weight:600; color:var(--paper);">${a.activo}</div>
@@ -4657,13 +4712,16 @@ function renderFlujoPorActivo(){
   if(!table) return;
 
   const activos = getActivos().filter(a => empresaEnFiltro(a.empresa) && (state.activosFiltro.length === 0 || state.activosFiltro.includes(a.activo)));
-  const conectados = activos
+  let conectados = activos
     .map(a => ({
       ...a,
       rentaReal: ingresoRealExactoPorActivo(a.activo),
       egresoReal: egresoRealExactoPorActivo(a.activo),
     }))
     .filter(a => a.rentaReal !== null || a.egresoReal !== null);
+  if(activosVistaState.tipos.length > 0){
+    conectados = conectados.filter(a => activosVistaState.tipos.includes(a.tipo));
+  }
 
   if(conectados.length === 0){
     table.innerHTML = `<tbody><tr><td class="capture-log-empty">Todavía no hay movimientos en Consolidado con la columna "Activo" llenada. En cuanto conectes un movimiento a un activo, va a aparecer aquí con su flujo real.</td></tr></tbody>`;
@@ -4672,7 +4730,13 @@ function renderFlujoPorActivo(){
 
   let html = '<thead><tr><th>Activo</th><th>Renta real /mes</th><th>Renta teórica /mes</th><th>Egreso real /mes</th><th>Neto real /mes</th></tr></thead><tbody>';
   let totalRentaReal = 0, totalEgresoReal = 0;
-  conectados.sort((a,b) => (b.rentaReal||0) - (a.rentaReal||0)).forEach(a=>{
+  const { sorted: ordenados, grupoDe } = ordenarYAgruparActivos(conectados, (a,b) => (b.rentaReal||0) - (a.rentaReal||0));
+  let grupoAnterior = undefined;
+  ordenados.forEach(a=>{
+    const grupoActual = grupoDe(a);
+    const nuevoGrupo = grupoActual !== undefined && grupoActual !== grupoAnterior;
+    grupoAnterior = grupoActual;
+    if(nuevoGrupo) html += filaDivisorGrupo(grupoActual, 5);
     const renta = a.rentaReal || 0, egreso = a.egresoReal || 0;
     const neto = renta - egreso;
     totalRentaReal += renta; totalEgresoReal += egreso;
