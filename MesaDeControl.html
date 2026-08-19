@@ -592,6 +592,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
       </div>
       <div class="section-note" style="text-align:left; max-width:none;">Ingreso, egreso y utilidad mes contra mes — cambia entre ver cada mes aislado (Estado de Resultados) o acumulado (Flujo de Efectivo).</div>
+      <div class="kpi-row kpi-row-3" id="chart-evolucion-resumen"></div>
       <div class="panel">
         <canvas id="chart-evolucion" height="90"></canvas>
       </div>
@@ -793,6 +794,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
         <div class="section-note">Cada mes con su actividad real, más lo acumulado hasta antes de ese mes cargado como "Utilidades" (en Ingresos) o "Pérdidas" (en Egresos).</div>
       </div>
+      <div class="kpi-row kpi-row-3" id="chart-evolucion-acum-resumen"></div>
       <div class="panel">
         <canvas id="chart-evolucion-acum" height="90"></canvas>
       </div>
@@ -1188,6 +1190,7 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
         </div>
       </div>
       <div class="section-note" style="text-align:left; max-width:none;">Ingreso, egreso y utilidad de cada mes por separado (sin acumular).</div>
+      <div class="kpi-row kpi-row-3" id="chart-evolucion-er-resumen"></div>
       <div class="panel">
         <canvas id="chart-evolucion-er" height="90"></canvas>
       </div>
@@ -2131,6 +2134,51 @@ const _chartsEvolucion = {}; // registro de instancias por canvasId (para reutil
 // Chart.js no reporta "elements" cuando se da clic en las ETIQUETAS del eje X (solo sobre las
 // barras). Esta función detecta si el clic cayó en la franja de etiquetas de abajo y, si así
 // fue, regresa el índice del periodo cuya etiqueta está más cerca del punto donde se dio clic.
+// ===== RESUMEN ARRIBA DE LA GRÁFICA: incremento de ingreso promedio, % egreso/ingreso
+// promedio, y utilidad promedio — calculados sobre justo los periodos que se ven en ese
+// momento en la gráfica (respeta el zoom a un mes, el filtro de rubro aislado, etc). =====
+function renderResumenEvolucion(contId, periodos, datasets){
+  const cont = document.getElementById(contId);
+  if(!cont) return;
+  if(periodos.length === 0){ cont.innerHTML = ''; return; }
+
+  const ingresoPorPeriodo = periodos.map((p,i) => datasets.filter(d=>d._tipoMov==='INGRESO').reduce((a,d)=>a+(d.data[i]||0),0));
+  const egresoPorPeriodo = periodos.map((p,i) => datasets.filter(d=>d._tipoMov==='EGRESO').reduce((a,d)=>a+(d.data[i]||0),0));
+
+  let incrementos = [];
+  for(let i=1;i<ingresoPorPeriodo.length;i++){
+    if(ingresoPorPeriodo[i-1] !== 0) incrementos.push((ingresoPorPeriodo[i]-ingresoPorPeriodo[i-1])/ingresoPorPeriodo[i-1]*100);
+  }
+  const incrementoPromedio = incrementos.length ? incrementos.reduce((a,b)=>a+b,0)/incrementos.length : null;
+
+  let pctEgresos = [];
+  ingresoPorPeriodo.forEach((ing,i)=>{ if(ing !== 0) pctEgresos.push(egresoPorPeriodo[i]/ing*100); });
+  const pctEgresoPromedio = pctEgresos.length ? pctEgresos.reduce((a,b)=>a+b,0)/pctEgresos.length : null;
+
+  const utilidades = ingresoPorPeriodo.map((ing,i)=> ing - egresoPorPeriodo[i]);
+  const utilidadPromedio = utilidades.length ? utilidades.reduce((a,b)=>a+b,0)/utilidades.length : null;
+
+  const etiquetaPromedio = periodos.length === 1 ? '(solo este mes)' : `(promedio de ${periodos.length} meses)`;
+
+  cont.innerHTML = `
+    <div class="kpi k-ingreso">
+      <div class="kpi-label">Incremento de ingreso promedio</div>
+      <div class="kpi-value ${incrementoPromedio!==null && incrementoPromedio<0?'neg':''}">${incrementoPromedio!==null ? fmtPct(incrementoPromedio) : '— sin datos suficientes'}</div>
+      <div class="kpi-delta flat">mes contra mes anterior</div>
+    </div>
+    <div class="kpi k-egreso">
+      <div class="kpi-label">Egresos sobre ingresos</div>
+      <div class="kpi-value">${pctEgresoPromedio!==null ? pctEgresoPromedio.toFixed(1)+'%' : '—'}</div>
+      <div class="kpi-delta flat">promedio ${etiquetaPromedio}</div>
+    </div>
+    <div class="kpi k-margen">
+      <div class="kpi-label">Utilidad promedio</div>
+      <div class="kpi-value ${utilidadPromedio!==null && utilidadPromedio<0?'neg':''}">${utilidadPromedio!==null ? fmtMoney(utilidadPromedio) : '—'}</div>
+      <div class="kpi-delta flat">por mes ${etiquetaPromedio}</div>
+    </div>
+  `;
+}
+
 function detectarClicEnEjeX(evt, chart){
   const area = chart.chartArea;
   const y = evt.native ? evt.native.offsetY : null;
@@ -2393,6 +2441,7 @@ function renderEvolucion(canvasId){
   actualizarBarraRubroEvolucion(canvasId);
   _chartsEvolucion[canvasId] = chart;
   ctx.onmouseleave = () => obtenerDivTooltipEjeX().style.display = 'none';
+  renderResumenEvolucion(canvasId + '-resumen', periodos, [...datasetsIngreso, ...datasetsEgreso]);
 }
 
 // ===================== EVOLUCIÓN ACUMULADA (Flujo de Efectivo) =====================
@@ -2600,6 +2649,7 @@ function renderEvolucionAcumulada(canvasId){
   _chartsEvolucion[canvasId] = chart;
   actualizarBarraRubroEvolucion(canvasId);
   ctx.onmouseleave = () => obtenerDivTooltipEjeX().style.display = 'none';
+  renderResumenEvolucion(canvasId + '-resumen', periodosVista, datasetsVista);
 }
 
 // ===================== UTILIDAD ACUMULADA (corrido mes contra mes) =====================
@@ -3553,19 +3603,19 @@ function renderResumenEmpresas(){
       const v = empRows.filter(r=>r.tipo_mov==='EGRESO' && r.categoria===t).reduce((a,r)=>a+r.monto,0);
       egresoTotalEmp += v;
       granEgresoPorTipo[t] += v;
-      return v > 0 ? `<td>${fmtMoney(v)}</td>` : '<td>—</td>';
+      return v > 0 ? `<td data-clic-mov data-empresa="${emp}" data-categoria="${t}" data-tipomov="EGRESO">${fmtMoney(v)}</td>` : '<td>—</td>';
     }).join('');
     const totalNeto = ingresoTotal - egresoTotalEmp;
     granIngreso += ingresoTotal;
     granNeto += totalNeto;
-    html += `<tr class="subtotal"><td>${emp}</td><td>${fmtMoney(ingresoTotal)}</td>${celdas}<td class="${totalNeto>=0?'':'neg'}">${fmtMoney(totalNeto)}</td></tr>`;
+    html += `<tr class="subtotal"><td data-clic-mov data-empresa="${emp}">${emp}</td><td data-clic-mov data-empresa="${emp}" data-tipomov="INGRESO">${fmtMoney(ingresoTotal)}</td>${celdas}<td class="${totalNeto>=0?'':'neg'}" data-clic-mov data-empresa="${emp}">${fmtMoney(totalNeto)}</td></tr>`;
   });
 
   const totalCells = tiposEgreso.map(t => granEgresoPorTipo[t] > 0 ? `<td>${fmtMoney(granEgresoPorTipo[t])}</td>` : '<td>—</td>').join('');
   html += `<tr class="subtotal"><td>Total</td><td>${fmtMoney(granIngreso)}</td>${totalCells}<td class="${granNeto>=0?'':'neg'}">${fmtMoney(granNeto)}</td></tr>`;
 
-  if(table) table.innerHTML = html;
-  if(tableFE) tableFE.innerHTML = html;
+  if(table){ table.innerHTML = html; adjuntarClicsMovimientos(table); }
+  if(tableFE){ tableFE.innerHTML = html; adjuntarClicsMovimientos(tableFE); }
 }
 
 // ===================== PIVOT TABLE =====================
@@ -3641,13 +3691,14 @@ function crearPivotInstancia(sufijo){
     const table = document.getElementById('pivot-table' + sufijo);
     if(!table) return;
 
-    const formatCelda = (v) => {
-      if(pivotState.tipoMov === 'NETO') return `<td class="${v>=0?'':'neg'}">${fmtMoney(v)}</td>`;
-      return `<td>${fmtMoney(Math.abs(v))}</td>`;
+    const formatCelda = (v, empresa, tipo, periodoObj) => {
+      const attrs = `data-clic-mov data-empresa="${empresa||''}" data-categoria="${tipo||''}"${pivotState.tipoMov!=='NETO' ? ` data-tipomov="${pivotState.tipoMov}"` : ''}${periodoObj ? ` data-mes="${periodoObj.mes}" data-anio="${periodoObj.anio}"` : ''}`;
+      if(pivotState.tipoMov === 'NETO') return `<td ${attrs} class="${v>=0?'':'neg'}">${fmtMoney(v)}</td>`;
+      return `<td ${attrs}>${fmtMoney(Math.abs(v))}</td>`;
     };
     const formatCeldaVacia = '<td>—</td>';
 
-    function tablaParaFilas(rows, encabezadoExtra){
+    function tablaParaFilas(rows, encabezadoExtra, periodoObj){
       const empresas = state.empresas.length ? state.empresas : EMPRESAS;
       const tiposSet = new Set();
       rows.forEach(r=>tiposSet.add(r.categoria));
@@ -3666,18 +3717,18 @@ function crearPivotInstancia(sufijo){
             if(cellRows.length===0) return formatCeldaVacia;
             const v = pivotValor(cellRows);
             rowTotal += v;
-            return formatCelda(v);
+            return formatCelda(v, emp, t, periodoObj);
           }).join('');
-          html += `<tr class="subtotal"><td>${emp}</td>${cells}${formatCelda(rowTotal)}</tr>`;
+          html += `<tr class="subtotal"><td data-clic-mov data-empresa="${emp}"${periodoObj ? ` data-mes="${periodoObj.mes}" data-anio="${periodoObj.anio}"` : ''}>${emp}</td>${cells}${formatCelda(rowTotal, emp, '', periodoObj)}</tr>`;
         });
         let grandTotal = 0;
         const totalCells = tipos.map(t=>{
           const cellRows = rows.filter(r=>r.categoria===t);
           const v = pivotValor(cellRows);
           grandTotal += v;
-          return formatCelda(v);
+          return formatCelda(v, '', t, periodoObj);
         }).join('');
-        html += `<tr class="subtotal"><td>Total</td>${totalCells}${formatCelda(grandTotal)}</tr>`;
+        html += `<tr class="subtotal"><td>Total</td>${totalCells}${formatCelda(grandTotal, '', '', periodoObj)}</tr>`;
       } else {
         html += '<tr><th>Línea / Empresa</th>' + empresas.map(e=>`<th>${e}</th>`).join('') + '<th>Total</th></tr>';
         tipos.forEach(t=>{
@@ -3689,24 +3740,24 @@ function crearPivotInstancia(sufijo){
             if(cellRows.length===0) return formatCeldaVacia;
             const v = pivotValor(cellRows);
             rowTotal += v;
-            return formatCelda(v);
+            return formatCelda(v, emp, t, periodoObj);
           }).join('');
-          html += `<tr class="subtotal"><td>${displayCategoria(t)}</td>${cells}${formatCelda(rowTotal)}</tr>`;
+          html += `<tr class="subtotal"><td>${displayCategoria(t)}</td>${cells}${formatCelda(rowTotal, '', t, periodoObj)}</tr>`;
         });
         let grandTotal = 0;
         const totalCells = empresas.map(emp=>{
           const cellRows = rows.filter(r=>r.empresa===emp);
           const v = pivotValor(cellRows);
           grandTotal += v;
-          return formatCelda(v);
+          return formatCelda(v, emp, '', periodoObj);
         }).join('');
-        html += `<tr class="subtotal"><td>Total</td>${totalCells}${formatCelda(grandTotal)}</tr>`;
+        html += `<tr class="subtotal"><td>Total</td>${totalCells}${formatCelda(grandTotal, '', '', periodoObj)}</tr>`;
       }
       return html;
     }
 
     if(pivotState.periodo === 'acumulado'){
-      table.innerHTML = tablaParaFilas(rowsBase, null);
+      table.innerHTML = tablaParaFilas(rowsBase, null, null);
     } else {
       const periodosDisponibles = getPeriodosOrdenados(rowsBase);
       const periodosAMostrar = pivotState.meses.length ? periodosDisponibles.filter(p=>pivotState.meses.includes(p.mes)) : periodosDisponibles;
@@ -3714,11 +3765,12 @@ function crearPivotInstancia(sufijo){
       periodosAMostrar.forEach(p=>{
         const mesRows = rowsBase.filter(r=>r.mes===p.mes && getAnioDeFila(r)===p.anio);
         if(mesRows.length === 0) return;
-        html += tablaParaFilas(mesRows, labelPeriodo(p));
+        html += tablaParaFilas(mesRows, labelPeriodo(p), p);
       });
       if(!html) html = '<tr><td class="capture-log-empty">Selecciona al menos un mes con datos.</td></tr>';
       table.innerHTML = html;
     }
+    adjuntarClicsMovimientos(table);
   }
 
   return { renderPivot, renderPivotMesChips };
@@ -3773,17 +3825,17 @@ function renderVariacion(){
     }
 
     html += `<tr>
-      <td>${emp}</td>
-      <td>${labelPeriodo(prev)}: ${fmtMoney(prevUtil)}</td>
-      <td>${labelPeriodo(last)}: ${fmtMoney(lastUtil)}</td>
+      <td data-clic-mov data-empresa="${emp}">${emp}</td>
+      <td data-clic-mov data-empresa="${emp}" data-mes="${prev.mes}" data-anio="${prev.anio}">${labelPeriodo(prev)}: ${fmtMoney(prevUtil)}</td>
+      <td data-clic-mov data-empresa="${emp}" data-mes="${last.mes}" data-anio="${last.anio}">${labelPeriodo(last)}: ${fmtMoney(lastUtil)}</td>
       <td class="${cls}">${diff>=0?'+':''}${fmtMoney(diff)}</td>
       <td class="${cls}">${pctLabel}</td>
     </tr>`;
   });
   const tbody = document.querySelector('#table-variacion tbody');
   const tbodyER = document.querySelector('#table-variacion-er tbody');
-  if(tbody) tbody.innerHTML = html;
-  if(tbodyER) tbodyER.innerHTML = html;
+  if(tbody){ tbody.innerHTML = html; adjuntarClicsMovimientos(tbody); }
+  if(tbodyER){ tbodyER.innerHTML = html; adjuntarClicsMovimientos(tbodyER); }
 }
 
 // ===================== TOP CLIENTS / COUNTERPARTIES =====================
@@ -3799,23 +3851,25 @@ function renderRankings(){
     return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);
   }
 
-  function renderList(elId, list, colorClass){
+  function renderList(elId, list, colorClass, tipo){
     const max = list.length ? list[0][1] : 1;
-    document.getElementById(elId).innerHTML = list.map((item,i)=>{
+    const cont = document.getElementById(elId);
+    cont.innerHTML = list.map((item,i)=>{
       const widthPct = item[1]/max*100;
-      return `<div class="rank-item">
+      return `<div class="rank-item" data-clic-mov data-razon="${item[0]}" data-tipomov="${tipo}">
         <div class="rank-num">${String(i+1).padStart(2,'0')}</div>
         <div class="rank-name">${item[0]}</div>
         <div class="rank-val">${fmtMoney(item[1])}</div>
         <div class="rank-track"><div class="rank-fill ${colorClass}" style="width:${widthPct}%"></div></div>
       </div>`;
     }).join('') || '<div style="color:var(--paper-faint); font-size:13px;">Sin movimientos en este filtro.</div>';
+    adjuntarClicsMovimientos(cont);
   }
 
-  renderList('rank-ingresos', topBy('INGRESO'), 'teal');
-  renderList('rank-egresos', topBy('EGRESO'), '');
-  if(document.getElementById('rank-ingresos-fe')) renderList('rank-ingresos-fe', topBy('INGRESO'), 'teal');
-  if(document.getElementById('rank-egresos-fe')) renderList('rank-egresos-fe', topBy('EGRESO'), '');
+  renderList('rank-ingresos', topBy('INGRESO'), 'teal', 'INGRESO');
+  renderList('rank-egresos', topBy('EGRESO'), '', 'EGRESO');
+  if(document.getElementById('rank-ingresos-fe')) renderList('rank-ingresos-fe', topBy('INGRESO'), 'teal', 'INGRESO');
+  if(document.getElementById('rank-egresos-fe')) renderList('rank-egresos-fe', topBy('EGRESO'), '', 'EGRESO');
 }
 
 // ===================== COMPOSITION (donut per company) =====================
@@ -5669,9 +5723,9 @@ function initTabs(){
 
 // Llamado desde los pie charts de Flujos: lleva a la pestaña Movimientos ya
 // filtrada por la empresa/categoría/tipo de movimiento en la que se hizo clic.
-function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, anio, activo, soloOperativo }){
+function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, anio, activo, soloOperativo, razonSocial }){
   guardarEstadoAntesDeSalto(); // para poder regresar exacto a donde estabas con el botón flotante
-  movsState.search = '';
+  movsState.search = razonSocial || '';
   movsState.categoria = categoria || '';
   movsState.tipoMov = tipoMov || '';
   movsState.activo = activo || '';
@@ -5683,6 +5737,27 @@ function goToMovimientosFiltrado({ empresa, categoria, tipoMov, mes, anio, activ
   if(mes) state.meses = Array.isArray(mes) ? [...mes] : [mes];
   if(anio) state.anios = [anio];
   switchToTab('movimientos');
+}
+
+// Conecta cualquier tabla/lista con celdas marcadas data-clic-mov a Movimientos, usando sus
+// atributos data-empresa/data-categoria/data-tipomov/data-mes/data-anio/data-razon como
+// filtro. Se usa en todas las tablas y rankings que resumen movimientos (no en Activos, que
+// tiene su propio flujo de selección).
+function adjuntarClicsMovimientos(container){
+  if(!container) return;
+  container.querySelectorAll('[data-clic-mov]').forEach(el=>{
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', ()=>{
+      goToMovimientosFiltrado({
+        empresa: el.dataset.empresa || '',
+        categoria: el.dataset.categoria || '',
+        tipoMov: el.dataset.tipomov || '',
+        mes: el.dataset.mes ? el.dataset.mes.split(',') : (state.meses.length ? state.meses : undefined),
+        anio: el.dataset.anio || undefined,
+        razonSocial: el.dataset.razon || undefined,
+      });
+    });
+  });
 }
 
 function initConfigForm(){
