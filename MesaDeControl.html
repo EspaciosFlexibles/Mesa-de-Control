@@ -955,6 +955,20 @@ footer{ text-align:center; font-family: var(--mono); font-size:10.5px; color: va
       </div>
 
       <div class="activos-subtab-panel" id="subtab-ficha">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:14px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span class="flabel" style="font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-faint);">TIPO</span>
+            <div class="msdrop" id="msdrop-ficha-tipo">
+              <button class="msdrop-btn" type="button" id="msdrop-btn-ficha-tipo">Todos ▾</button>
+              <div class="msdrop-panel" id="msdrop-panel-ficha-tipo"></div>
+            </div>
+          </div>
+          <div class="view-toggle" id="ficha-orden-toggle">
+            <button class="active" data-orden="roi">Por ROI</button>
+            <button data-orden="tipo">Por Tipo</button>
+            <button data-orden="empresa">Por Empresa</button>
+          </div>
+        </div>
         <div class="panel pivot-wrap">
           <table class="pivot" id="activos-table">
             <thead>
@@ -4352,6 +4366,10 @@ function initActivosPagoToggle(){
 }
 initActivosPagoToggle();
 
+// Filtro por Tipo (Bodegas Grandes, Terrenos, etc.) y orden de la tabla "Ficha financiera de
+// cada activo" — es un filtro local de esta sub-pestaña, no afecta las otras dos.
+const fichaActivosState = { orden: 'roi', tipos: [] };
+
 function initActivosSubtabs(){
   document.querySelectorAll('#activos-subtabs .subtab-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -4363,6 +4381,57 @@ function initActivosSubtabs(){
   });
 }
 initActivosSubtabs();
+
+function initFichaActivosControles(){
+  const btn = document.getElementById('msdrop-btn-ficha-tipo');
+  const panel = document.getElementById('msdrop-panel-ficha-tipo');
+  if(btn && panel){
+    const actualizarBotonTipo = () => {
+      const n = fichaActivosState.tipos.length;
+      btn.textContent = (n === 0 ? 'Todos' : (n === 1 ? fichaActivosState.tipos[0] : n + ' seleccionados')) + ' ▾';
+      btn.classList.toggle('has-value', n > 0);
+    };
+    const renderPanelTipo = () => {
+      const tipos = [...new Set(getActivos().map(a=>a.tipo))].filter(Boolean).sort();
+      panel.innerHTML = tipos.length ? tipos.map(t => `
+        <label class="msdrop-item">
+          <input type="checkbox" value="${t}" ${fichaActivosState.tipos.includes(t)?'checked':''}>
+          <span>${t}</span>
+        </label>
+      `).join('') : '<div class="msdrop-empty">Sin tipos disponibles.</div>';
+      panel.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+        cb.addEventListener('change', ()=>{
+          const v = cb.value;
+          const idx = fichaActivosState.tipos.indexOf(v);
+          if(cb.checked && idx === -1) fichaActivosState.tipos.push(v);
+          else if(!cb.checked && idx !== -1) fichaActivosState.tipos.splice(idx,1);
+          actualizarBotonTipo();
+          renderActivosTable();
+        });
+      });
+    };
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const abierto = panel.style.display === 'block';
+      document.querySelectorAll('.msdrop-panel').forEach(p=>p.style.display='none');
+      if(!abierto){ renderPanelTipo(); panel.style.display = 'block'; }
+    });
+    document.addEventListener('click', (e)=>{
+      if(!panel.contains(e.target) && e.target !== btn) panel.style.display = 'none';
+    });
+    actualizarBotonTipo();
+  }
+
+  document.querySelectorAll('#ficha-orden-toggle button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('#ficha-orden-toggle button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      fichaActivosState.orden = b.dataset.orden;
+      renderActivosTable();
+    });
+  });
+}
+initFichaActivosControles();
 
 
 // Ingreso real mensual promedio para una combinación Empresa+Tipo, usando todos los meses con datos en Base.
@@ -4524,18 +4593,36 @@ function renderActivosKPIs(){
 
 // ===================== RENDER: ROI/ROA TABLE =====================
 function renderActivosTable(){
-  const rows = getActivosFiltrados();
+  let rows = getActivosFiltrados();
   const tbody = document.querySelector('#activos-table tbody');
   if(!tbody) return;
+
+  if(fichaActivosState.tipos.length > 0){
+    rows = rows.filter(a => fichaActivosState.tipos.includes(a.tipo));
+  }
 
   if(rows.length === 0){
     tbody.innerHTML = `<tr><td colspan="10" class="capture-log-empty">Sin activos para este filtro.</td></tr>`;
     return;
   }
 
-  const sorted = [...rows].sort((a,b) => (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
+  const ordenEmpresas = getEmpresas();
+  let sorted;
+  if(fichaActivosState.orden === 'tipo'){
+    sorted = [...rows].sort((a,b) => a.tipo.localeCompare(b.tipo) || (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
+  } else if(fichaActivosState.orden === 'empresa'){
+    sorted = [...rows].sort((a,b) => (ordenEmpresas.indexOf(a.empresa) - ordenEmpresas.indexOf(b.empresa)) || (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
+  } else {
+    sorted = [...rows].sort((a,b) => (b.roiReal ?? b.roiTeorico ?? 0) - (a.roiReal ?? a.roiTeorico ?? 0));
+  }
+
+  const grupoDe = (a) => fichaActivosState.orden === 'tipo' ? a.tipo : (fichaActivosState.orden === 'empresa' ? a.empresa : null);
+  let grupoAnterior = undefined;
 
   tbody.innerHTML = sorted.map(a => {
+    const grupoActual = grupoDe(a);
+    const nuevoGrupo = grupoActual !== undefined && grupoActual !== grupoAnterior;
+    grupoAnterior = grupoActual;
     const brechaTag = a.brechaPct === null ? '' :
       a.brechaPct >= 0
         ? `<span class="tag-nuevo" style="color:var(--teal-bright); background:rgba(0,135,95,0.08); border-color:rgba(0,135,95,0.25);">+${a.brechaPct.toFixed(0)}% vs teórico</span>`
@@ -4544,6 +4631,7 @@ function renderActivosTable(){
       ? `<div class="bar-cell"><span style="font-family:var(--mono); font-size:12px;">${a.pctRecuperado.toFixed(1)}%</span><div class="mini-bar" style="width:${Math.max(a.pctRecuperado,3)}px; max-width:50px;"></div></div>`
       : `<span style="color:var(--paper-faint); font-size:11px;" title="Conecta esta fila a un Activo en la columna 'Activo' de tus movimientos para calcular esto con precisión.">— sin conectar</span>`;
     return `
+    ${nuevoGrupo ? `<tr><th colspan="10" style="text-align:left; background:var(--panel-raised); font-family:var(--mono); font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--paper-dim);">${fichaActivosState.orden === 'tipo' ? 'Tipo' : 'Empresa'}: ${grupoActual}</th></tr>` : ''}
     <tr data-activo="${a.activo}">
       <td style="text-align:left;">
         <div style="font-weight:600; color:var(--paper);">${a.activo}</div>
